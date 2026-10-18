@@ -1,0 +1,52 @@
+name: CI hygiene
+
+# Lightweight tooling checks over the CI configuration itself:
+#   - actionlint:    lint every workflow file in .github/workflows (issue #804)
+#   - cargo-machete: fast unused-dependency scan of the workspace (issue #805)
+# These jobs need no Rust toolchain build, so they are intentionally kept in
+# their own workflow file, separate from ci.yml.
+
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Lints .github/workflows/*.yml: workflow syntax, action inputs/outputs,
+      # expression contexts, and (since shellcheck is preinstalled on ubuntu
+      # runners) the `run:` blocks themselves. Version pinned for
+      # reproducibility, mirroring how cargo-audit is pinned in ci.yml.
+      - name: Check workflow files
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.11
+          ./actionlint -color
+        shell: bash
+
+  cargo-machete:
+    name: cargo-machete
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # cargo-machete scans Cargo.toml declarations against crate sources
+      # without compiling, so this job stays fast even for a 5+ crate
+      # workspace. Exits non-zero when it reports unused dependencies.
+      - name: Install cargo-machete
+        run: |
+          curl -sSfL https://github.com/bnjbvr/cargo-machete/releases/download/v0.9.2/cargo-machete-v0.9.2-x86_64-unknown-linux-musl.tar.gz | tar xz --strip-components=1
+          ./cargo-machete --version
+        shell: bash
+
+      - name: Check for unused dependencies
+        run: ./cargo-machete --skip-target-dir
+        shell: bash
