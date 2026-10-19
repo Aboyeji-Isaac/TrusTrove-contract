@@ -1553,6 +1553,12 @@ impl InvoiceContract {
     /// repayment accounting is updated, the invoice transitions to `Repaid`,
     /// and `invoice_repaid` is emitted.
     ///
+    /// Yield accrues linearly from `funded_at` to `due_date`, capped at the
+    /// full discount (`face_value - funded_amount`). At or after maturity
+    /// (including a zero-length term), the pool earns exactly that discount
+    /// and the buyer receives no refund; late repayment adds no extra yield.
+    /// Before maturity, the unearned discount is refunded to the buyer.
+    ///
     /// # Arguments
     /// * `env` - The Soroban environment.
     /// * `invoice_id` - The invoice being repaid.
@@ -1654,7 +1660,9 @@ impl InvoiceContract {
             let discount = face_value.saturating_sub(funded_amount);
             let term = invoice.due_date.saturating_sub(funded_at);
             let elapsed = now.saturating_sub(funded_at);
-            let earned_by_pool = if term == 0 {
+            // Stop accrual at maturity before multiplying: late repayment
+            // cannot earn more than the discount or overflow on elapsed time.
+            let earned_by_pool = if term == 0 || elapsed >= term {
                 discount
             } else {
                 discount
@@ -1662,7 +1670,7 @@ impl InvoiceContract {
                     .unwrap_or_else(|| panic_with_error!(&env, InvoiceError::MathOverflow))
                     / (term as u128)
             };
-            let refund_to_buyer = discount.saturating_sub(earned_by_pool);
+            let refund_to_buyer = discount - earned_by_pool;
 
             // Step 2: escrow releases full face_value back to pool
             let mut escrow_args = Vec::new(&env);
@@ -1710,6 +1718,8 @@ impl InvoiceContract {
     /// delegating to [`Self::repay_partial`] with the invoice's full
     /// `remaining_balance`. An invoice that already received partial
     /// repayments therefore only pulls the remainder from the buyer.
+    /// Yield is capped at the full discount at `due_date`, as documented in
+    /// [`Self::repay_partial`]; later settlement does not increase it.
     ///
     /// # Arguments
     /// * `env` - The Soroban environment.
