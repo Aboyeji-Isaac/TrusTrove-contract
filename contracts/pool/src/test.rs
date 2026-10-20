@@ -1585,6 +1585,17 @@ fn test_get_usdc_asset_panics_when_uninitialized() {
     pool.get_usdc_asset();
 }
 
+// The canonical name must carry the same typed pre-initialization contract as
+// the deprecated alias (issue #954).
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_get_funding_asset_panics_when_uninitialized() {
+    let env = Env::default();
+    let pool_id = env.register_contract(None, PoolContract);
+    let pool = PoolContractClient::new(&env, &pool_id);
+    pool.get_funding_asset();
+}
+
 #[test]
 #[should_panic(expected = "Error(Contract, #13)")]
 fn test_fund_invoice_rejects_utilization_overflow() {
