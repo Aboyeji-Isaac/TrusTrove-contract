@@ -157,7 +157,7 @@ fn setup() -> Setup {
     let env = Env::default();
     env.mock_all_auths();
 
-    let registry_id = env.register_contract(None, MockRegistry);
+    let registry_id = env.register(MockRegistry, ());
     let registry_client = MockRegistryClient::new(&env, &registry_id);
 
     let issuer = Address::generate(&env);
@@ -165,13 +165,13 @@ fn setup() -> Setup {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     client.initialize(&admin, &registry_id);
 
-    let usdc_asset = env.register_contract(None, MockToken);
+    let usdc_asset = env.register(MockToken, ());
     client.add_supported_asset(&usdc_asset);
 
     (env, client, issuer, buyer, registry_client, usdc_asset)
@@ -207,7 +207,7 @@ fn setup_with_admin() -> SetupWithAdmin {
     let env = Env::default();
     env.mock_all_auths();
 
-    let registry_id = env.register_contract(None, MockRegistry);
+    let registry_id = env.register(MockRegistry, ());
     let registry_client = MockRegistryClient::new(&env, &registry_id);
 
     let issuer = Address::generate(&env);
@@ -215,13 +215,13 @@ fn setup_with_admin() -> SetupWithAdmin {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     client.initialize(&admin, &registry_id);
 
-    let usdc_asset = env.register_contract(None, MockToken);
+    let usdc_asset = env.register(MockToken, ());
     client.add_supported_asset(&usdc_asset);
 
     (
@@ -236,7 +236,7 @@ fn setup_with_admin() -> SetupWithAdmin {
 }
 
 fn mock_pool_with_asset(env: &Env, asset: &Address) -> Address {
-    let pool_id = env.register_contract(None, MockPool);
+    let pool_id = env.register(MockPool, ());
     let _pool_client = MockPoolClient::new(env, &pool_id);
     env.as_contract(&pool_id, || {
         let key = Symbol::new(env, "asset");
@@ -277,7 +277,7 @@ use trusttrove_test_utils::{test_agent_pubkey, test_agent_signing_key};
 /// individual tests can just call this right before `list_for_financing`.
 fn attest(env: &Env, client: &InvoiceContractClient, invoice_id: &BytesN<32>) {
     let agent_id = Symbol::new(env, "test_agent");
-    let registry_id = env.register_contract(None, MockAgentRegistry);
+    let registry_id = env.register(MockAgentRegistry, ());
     let registry_client = MockAgentRegistryClient::new(env, &registry_id);
     registry_client.register_agent(
         &agent_id,
@@ -329,7 +329,7 @@ fn test_get_attestation_persists_signed_payload_and_submission_time() {
     assert!(client.get_attestation(&invoice_id).is_none());
 
     let agent_id = Symbol::new(&env, "underwriter");
-    let registry_id = env.register_contract(None, MockAgentRegistry);
+    let registry_id = env.register(MockAgentRegistry, ());
     MockAgentRegistryClient::new(&env, &registry_id).register_agent(
         &agent_id,
         &crate::Agent {
@@ -383,7 +383,7 @@ fn test_submit_attestation_untrusted_signer_wrong_pubkey() {
     let invoice_id = client.create(&issuer, &buyer, &DEFAULT_FACE_VALUE, &due_date, &usdc);
 
     let agent_id = Symbol::new(&env, "test_agent");
-    let registry_id = env.register_contract(None, MockAgentRegistry);
+    let registry_id = env.register(MockAgentRegistry, ());
     let registry_client = MockAgentRegistryClient::new(&env, &registry_id);
 
     // Register agent with a different pubkey than the one we'll use to sign
@@ -427,7 +427,7 @@ fn test_submit_attestation_inactive_agent() {
     let invoice_id = client.create(&issuer, &buyer, &DEFAULT_FACE_VALUE, &due_date, &usdc);
 
     let agent_id = Symbol::new(&env, "test_agent");
-    let registry_id = env.register_contract(None, MockAgentRegistry);
+    let registry_id = env.register(MockAgentRegistry, ());
     let registry_client = MockAgentRegistryClient::new(&env, &registry_id);
 
     // Register agent as inactive but with the CORRECT pubkey for the signing
@@ -501,7 +501,7 @@ fn test_submit_attestation_unregistered_agent() {
     let invoice_id = client.create(&issuer, &buyer, &DEFAULT_FACE_VALUE, &due_date, &usdc);
 
     let agent_id = Symbol::new(&env, "test_agent");
-    let registry_id = env.register_contract(None, MockAgentRegistry);
+    let registry_id = env.register(MockAgentRegistry, ());
     let _registry_client = MockAgentRegistryClient::new(&env, &registry_id);
 
     // Don't register the agent at all
@@ -540,7 +540,7 @@ fn test_submit_attestation_replay_rejection() {
 
     // Second attestation with a different valid payload should fail
     let agent_id = Symbol::new(&env, "test_agent");
-    let registry_id = env.register_contract(None, MockAgentRegistry);
+    let registry_id = env.register(MockAgentRegistry, ());
     let registry_client = MockAgentRegistryClient::new(&env, &registry_id);
     registry_client.register_agent(
         &agent_id,
@@ -585,7 +585,7 @@ fn test_submit_attestation_domain_separator_mismatch() {
     let invoice_id = client.create(&issuer, &buyer, &DEFAULT_FACE_VALUE, &due_date, &usdc);
 
     let agent_id = Symbol::new(&env, "test_agent");
-    let registry_id = env.register_contract(None, MockAgentRegistry);
+    let registry_id = env.register(MockAgentRegistry, ());
     let registry_client = MockAgentRegistryClient::new(&env, &registry_id);
     registry_client.register_agent(
         &agent_id,
@@ -627,7 +627,7 @@ fn test_submit_attestation_invoice_id_mismatch() {
     let invoice_id = client.create(&issuer, &buyer, &DEFAULT_FACE_VALUE, &due_date, &usdc);
 
     let agent_id = Symbol::new(&env, "test_agent");
-    let registry_id = env.register_contract(None, MockAgentRegistry);
+    let registry_id = env.register(MockAgentRegistry, ());
     let registry_client = MockAgentRegistryClient::new(&env, &registry_id);
     registry_client.register_agent(
         &agent_id,
@@ -678,7 +678,7 @@ fn test_submit_attestation_nonexistent_invoice() {
     let (env, client, _issuer, _buyer, _, _usdc) = setup();
 
     let agent_id = Symbol::new(&env, "test_agent");
-    let registry_id = env.register_contract(None, MockAgentRegistry);
+    let registry_id = env.register(MockAgentRegistry, ());
     let registry_client = MockAgentRegistryClient::new(&env, &registry_id);
     registry_client.register_agent(
         &agent_id,
@@ -889,20 +889,20 @@ fn test_create_fails_unverified_issuer() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let registry_id = env.register_contract(None, MockRegistry);
+    let registry_id = env.register(MockRegistry, ());
     let registry_client = MockRegistryClient::new(&env, &registry_id);
 
     let issuer = Address::generate(&env);
     let buyer = Address::generate(&env);
     registry_client.register(&buyer);
 
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     client.initialize(&admin, &registry_id);
 
-    let usdc_asset = env.register_contract(None, MockToken);
+    let usdc_asset = env.register(MockToken, ());
     client.add_supported_asset(&usdc_asset);
 
     let face_value: u128 = DEFAULT_FACE_VALUE;
@@ -916,20 +916,20 @@ fn test_create_fails_unverified_buyer() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let registry_id = env.register_contract(None, MockRegistry);
+    let registry_id = env.register(MockRegistry, ());
     let registry_client = MockRegistryClient::new(&env, &registry_id);
 
     let issuer = Address::generate(&env);
     let buyer = Address::generate(&env);
     registry_client.register(&issuer);
 
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     client.initialize(&admin, &registry_id);
 
-    let usdc_asset = env.register_contract(None, MockToken);
+    let usdc_asset = env.register(MockToken, ());
     client.add_supported_asset(&usdc_asset);
 
     let face_value: u128 = DEFAULT_FACE_VALUE;
@@ -1658,7 +1658,7 @@ fn test_trigger_default_stranger_panics() {
     // the other `setup()`-based `trigger_default` tests, so it's deferred.
     let env = Env::default();
 
-    let registry_id = env.register_contract(None, MockRegistry);
+    let registry_id = env.register(MockRegistry, ());
     let registry_client = MockRegistryClient::new(&env, &registry_id);
 
     let issuer = Address::generate(&env);
@@ -1666,7 +1666,7 @@ fn test_trigger_default_stranger_panics() {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
@@ -2341,7 +2341,7 @@ fn test_set_agent_registry_contract_rejects_conflicting_addresses() {
 fn test_initialize_rejects_conflicting_registry_address() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
 
@@ -2392,7 +2392,7 @@ fn test_mark_shipped_succeeds_by_issuer() {
 fn test_mark_shipped_stranger_panics() {
     let env = Env::default();
 
-    let registry_id = env.register_contract(None, MockRegistry);
+    let registry_id = env.register(MockRegistry, ());
     let registry_client = MockRegistryClient::new(&env, &registry_id);
 
     let issuer = Address::generate(&env);
@@ -2400,7 +2400,7 @@ fn test_mark_shipped_stranger_panics() {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
@@ -2491,7 +2491,7 @@ fn test_mark_shipped_stranger_panics() {
 fn test_expire_listing_stranger_panics() {
     let env = Env::default();
 
-    let registry_id = env.register_contract(None, MockRegistry);
+    let registry_id = env.register(MockRegistry, ());
     let registry_client = MockRegistryClient::new(&env, &registry_id);
 
     let issuer = Address::generate(&env);
@@ -2499,7 +2499,7 @@ fn test_expire_listing_stranger_panics() {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
@@ -2778,7 +2778,7 @@ fn test_repay_fails_from_listed() {
 fn test_repay_fails_no_auth() {
     let env = Env::default();
 
-    let registry_id = env.register_contract(None, MockRegistry);
+    let registry_id = env.register(MockRegistry, ());
     let registry_client = MockRegistryClient::new(&env, &registry_id);
 
     let issuer = Address::generate(&env);
@@ -2786,7 +2786,7 @@ fn test_repay_fails_no_auth() {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
@@ -3132,7 +3132,7 @@ impl MockEscrow {
 
 /// Registers a MockEscrow wired to `pool_id` and `asset` and returns its address.
 fn mock_escrow_for_pool(env: &Env, pool_id: &Address, asset: &Address) -> Address {
-    let escrow_id = env.register_contract(None, MockEscrow);
+    let escrow_id = env.register(MockEscrow, ());
     let esc_client = MockEscrowClient::new(env, &escrow_id);
     esc_client.set_pool(pool_id);
     esc_client.set_asset(asset);
@@ -3555,7 +3555,7 @@ fn test_create_fails_uninitialized_registry() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let registry_id = env.register_contract(None, MockRegistry);
+    let registry_id = env.register(MockRegistry, ());
     let registry_client = MockRegistryClient::new(&env, &registry_id);
 
     let issuer = Address::generate(&env);
@@ -3563,7 +3563,7 @@ fn test_create_fails_uninitialized_registry() {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     let due_date = env.ledger().timestamp() + DEFAULT_DUE_OFFSET;
@@ -3585,7 +3585,7 @@ fn test_create_fails_missing_counter() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let registry_id = env.register_contract(None, MockRegistry);
+    let registry_id = env.register(MockRegistry, ());
     let registry_client = MockRegistryClient::new(&env, &registry_id);
 
     let issuer = Address::generate(&env);
@@ -3593,7 +3593,7 @@ fn test_create_fails_missing_counter() {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
@@ -3943,7 +3943,7 @@ fn test_get_funded_amount_missing_invoice_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_funded_amount_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_funded_amount(&fake_id);
@@ -3969,7 +3969,7 @@ fn test_get_missing_invoice_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_issuer_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_issuer(&fake_id);
@@ -3979,7 +3979,7 @@ fn test_get_issuer_uninitialized_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_face_value_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_face_value(&fake_id);
@@ -3989,7 +3989,7 @@ fn test_get_face_value_uninitialized_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_funding_asset_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_funding_asset(&fake_id);
@@ -3999,7 +3999,7 @@ fn test_get_funding_asset_uninitialized_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_discount_bps_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_discount_bps(&fake_id);
@@ -4009,7 +4009,7 @@ fn test_get_discount_bps_uninitialized_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_status_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_status(&fake_id);
@@ -4019,7 +4019,7 @@ fn test_get_status_uninitialized_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get(&fake_id);
@@ -4051,7 +4051,7 @@ fn test_get_buyer_missing_invoice_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_buyer_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_buyer(&fake_id);
@@ -4079,7 +4079,7 @@ fn test_get_due_date_missing_invoice_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_due_date_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_due_date(&fake_id);
@@ -4509,7 +4509,7 @@ fn setup_no_mock_auth() -> (
 ) {
     let env = Env::default();
 
-    let registry_id = env.register_contract(None, MockRegistry);
+    let registry_id = env.register(MockRegistry, ());
     let registry_client = MockRegistryClient::new(&env, &registry_id);
 
     let issuer = Address::generate(&env);
@@ -4517,7 +4517,7 @@ fn setup_no_mock_auth() -> (
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register_contract(None, InvoiceContract);
+    let contract_id = env.register(InvoiceContract, ());
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
@@ -4533,7 +4533,7 @@ fn setup_no_mock_auth() -> (
     client.initialize(&admin, &registry_id);
 
     // Funding asset must be allow-listed by the admin (explicit signature).
-    let usdc = env.register_contract(None, MockToken);
+    let usdc = env.register(MockToken, ());
     env.mock_auths(&[soroban_sdk::testutils::MockAuth {
         address: &admin,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
@@ -4547,7 +4547,7 @@ fn setup_no_mock_auth() -> (
 
     // Agent registry must be configured by the admin (explicit signature);
     // register_agent itself needs no auth.
-    let agent_registry_id = env.register_contract(None, MockAgentRegistry);
+    let agent_registry_id = env.register(MockAgentRegistry, ());
     env.mock_auths(&[soroban_sdk::testutils::MockAuth {
         address: &admin,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
@@ -5062,7 +5062,7 @@ fn test_batch_create_rejects_oversized_batch() {
 #[test]
 fn test_batch_create_allows_exactly_max_batch_size() {
     let (env, client, issuer, buyer, _, usdc) = setup();
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     let mut entries: Vec<(Address, u128, u64, Address)> = Vec::new(&env);
     for _ in 0..MAX_BATCH_SIZE {
         entries.push_back(batch_entry(&env, &buyer, &usdc, DEFAULT_FACE_VALUE));
@@ -5076,7 +5076,7 @@ fn test_batch_create_allows_exactly_max_batch_size() {
 #[test]
 fn test_batch_create_with_one_invalid_entry_reverts_whole_batch() {
     let (env, client, issuer, buyer, _, usdc) = setup();
-    let bad_asset = env.register_contract(None, MockToken);
+    let bad_asset = env.register(MockToken, ());
     let _ = MockTokenClient::new(&env, &bad_asset);
     let due_date = env.ledger().timestamp() + DEFAULT_DUE_OFFSET;
 
@@ -5261,7 +5261,7 @@ fn test_batch_list_for_financing_rejects_oversized_batch() {
 #[test]
 fn test_batch_list_for_financing_allows_exactly_max_batch_size() {
     let (env, client, issuer, buyer, _, usdc) = setup();
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     let due_date = env.ledger().timestamp() + DEFAULT_DUE_OFFSET;
     let mut entries: Vec<(BytesN<32>, u32)> = Vec::new(&env);
     for _ in 0..MAX_BATCH_SIZE {
@@ -5436,21 +5436,21 @@ fn test_get_funding_context_costs_less_than_four_separate_views() {
     client.list_for_financing(&invoice_id, &200);
 
     // Measure the old read pattern: four host calls, four invoice loads.
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     let four = (
         client.get_funding_terms(&invoice_id),
         client.get_issuer(&invoice_id),
         client.get_buyer(&invoice_id),
         client.get_funding_asset(&invoice_id),
     );
-    let cpu_four = env.budget().cpu_instruction_cost();
-    let mem_four = env.budget().memory_bytes_cost();
+    let cpu_four = env.cost_estimate().budget().cpu_instruction_cost();
+    let mem_four = env.cost_estimate().budget().memory_bytes_cost();
 
     // Measure the consolidated read: one host call, one invoice load.
-    env.budget().reset_default();
+    env.cost_estimate().budget().reset_default();
     let ctx = client.get_funding_context(&invoice_id);
-    let cpu_one = env.budget().cpu_instruction_cost();
-    let mem_one = env.budget().memory_bytes_cost();
+    let cpu_one = env.cost_estimate().budget().cpu_instruction_cost();
+    let mem_one = env.cost_estimate().budget().memory_bytes_cost();
 
     // Parity first (the cheaper path must answer identically)...
     assert_eq!(ctx.status, four.0 .0);
@@ -5714,15 +5714,15 @@ const MAX_GROWTH_FACTOR: u64 = 16;
 fn test_index_helper_cpu_does_not_grow_with_scan_depth() {
     const N: usize = 300;
     let (env, client, issuer, buyer, _, usdc) = setup();
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     let due_date = env.ledger().timestamp() + DEFAULT_DUE_OFFSET;
     let mut ids = Vec::new(&env);
     // Measured "first create": empty indexes (this is also the literal AC2
     // baseline pair; see the end of the test for why its factor is bounded
     // by the test host rather than the contract).
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     ids.push_back(client.create(&issuer, &buyer, &DEFAULT_FACE_VALUE, &due_date, &usdc));
-    let cpu_first_create = env.budget().cpu_instruction_cost();
+    let cpu_first_create = env.cost_estimate().budget().cpu_instruction_cost();
     for _ in 1..N {
         ids.push_back(client.create(&issuer, &buyer, &DEFAULT_FACE_VALUE, &due_date, &usdc));
     }
@@ -5734,28 +5734,28 @@ fn test_index_helper_cpu_does_not_grow_with_scan_depth() {
     // 1. `extend_issuer_index` duplicate detection: `ids[0]` sat at row 0
     //    of the issuer index (pre-fix scan: 1 read), `ids[N-1]` at the last
     //    row (pre-fix scan: N reads).
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     env.as_contract(&client.address, || {
         crate::extend_issuer_index(&env, &issuer, &ids.get(0).unwrap());
     });
-    let cpu_issuer_shallow = env.budget().cpu_instruction_cost();
-    env.budget().reset_unlimited();
+    let cpu_issuer_shallow = env.cost_estimate().budget().cpu_instruction_cost();
+    env.cost_estimate().budget().reset_unlimited();
     env.as_contract(&client.address, || {
         crate::extend_issuer_index(&env, &issuer, &ids.get(N as u32 - 1).unwrap());
     });
-    let cpu_issuer_deep = env.budget().cpu_instruction_cost();
+    let cpu_issuer_deep = env.cost_estimate().budget().cpu_instruction_cost();
 
     // 2. Same pair for `extend_buyer_index`.
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     env.as_contract(&client.address, || {
         crate::extend_buyer_index(&env, &buyer, &ids.get(0).unwrap());
     });
-    let cpu_buyer_shallow = env.budget().cpu_instruction_cost();
-    env.budget().reset_unlimited();
+    let cpu_buyer_shallow = env.cost_estimate().budget().cpu_instruction_cost();
+    env.cost_estimate().budget().reset_unlimited();
     env.as_contract(&client.address, || {
         crate::extend_buyer_index(&env, &buyer, &ids.get(N as u32 - 1).unwrap());
     });
-    let cpu_buyer_deep = env.budget().cpu_instruction_cost();
+    let cpu_buyer_deep = env.cost_estimate().budget().cpu_instruction_cost();
 
     // 3. `move_status_index`-driven transition: moving `ids[0]` (row 0 of
     //    the Created index) is the shallow case; moving `ids[N-2]` (second
@@ -5763,12 +5763,12 @@ fn test_index_helper_cpu_does_not_grow_with_scan_depth() {
     //    deep case. These double as the "last create / last transition"
     //    end-to-end signal: every public create and transition funnels
     //    through exactly these three helpers.
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     assert!(client.cancel(&ids.get(0).unwrap()));
-    let cpu_move_shallow = env.budget().cpu_instruction_cost();
-    env.budget().reset_unlimited();
+    let cpu_move_shallow = env.cost_estimate().budget().cpu_instruction_cost();
+    env.cost_estimate().budget().reset_unlimited();
     assert!(client.cancel(&ids.get(N as u32 - 2).unwrap()));
-    let cpu_move_deep = env.budget().cpu_instruction_cost();
+    let cpu_move_deep = env.cost_estimate().budget().cpu_instruction_cost();
 
     assert!(
         cpu_issuer_deep <= cpu_issuer_shallow * MAX_GROWTH_FACTOR,
@@ -5812,9 +5812,9 @@ fn test_index_helper_cpu_does_not_grow_with_scan_depth() {
     // assertion is the scan-depth gate above. Before the fix the extra
     // full-index scans pushed this ratio to ~27x, failing the bound; with
     // the marker rewrite it lands back at the host floor.
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     client.create(&issuer, &buyer, &DEFAULT_FACE_VALUE, &due_date, &usdc);
-    let cpu_last_create = env.budget().cpu_instruction_cost();
+    let cpu_last_create = env.cost_estimate().budget().cpu_instruction_cost();
     assert!(
         cpu_last_create <= cpu_first_create * 25,
         "create cost must stay at the test-host floor: first {cpu_first_create}, last {cpu_last_create} ({}x)",

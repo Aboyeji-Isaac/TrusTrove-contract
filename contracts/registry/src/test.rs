@@ -20,7 +20,7 @@ use soroban_sdk::{
 fn setup() -> (Env, RegistryContractClient<'static>) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, RegistryContract);
+    let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
     (env, client)
 }
@@ -205,7 +205,7 @@ fn test_revoke_unregistered_panics() {
 #[should_panic(expected = "Error(Auth, InvalidAction)")]
 fn test_revoke_wrong_auth_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, RegistryContract);
+    let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
@@ -325,7 +325,7 @@ fn test_reinstate_restores_verified_and_emits_event() {
 #[should_panic(expected = "Error(Auth, InvalidAction)")]
 fn test_reinstate_wrong_auth_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, RegistryContract);
+    let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
@@ -448,7 +448,7 @@ fn test_update_metadata_unregistered_panics() {
 #[should_panic(expected = "Error(Auth, InvalidAction)")]
 fn test_update_metadata_wrong_auth_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, RegistryContract);
+    let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
 
     let issuer = Address::generate(&env);
@@ -543,7 +543,7 @@ fn test_update_profile_happy_path() {
 #[should_panic(expected = "Error(Auth, InvalidAction)")]
 fn test_update_profile_wrong_auth_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, RegistryContract);
+    let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
 
     let issuer = Address::generate(&env);
@@ -605,7 +605,7 @@ fn test_duplicate_registration_panics() {
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_register_issuer_then_buyer_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, RegistryContract);
+    let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
@@ -670,7 +670,7 @@ fn test_register_issuer_then_buyer_panics() {
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_register_buyer_then_issuer_panics() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, RegistryContract);
+    let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
@@ -1300,7 +1300,7 @@ fn test_transfer_admin_changes_admin() {
 #[test]
 fn test_transfer_admin_bypasses_transfer_ownership_dual_auth() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, RegistryContract);
+    let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     let new_admin = Address::generate(&env);
@@ -2603,8 +2603,8 @@ fn test_transfer_ownership_blocked_while_paused() {
 fn test_pause_is_scoped_to_one_instance() {
     let env = Env::default();
     env.mock_all_auths();
-    let id_a = env.register_contract(None, RegistryContract);
-    let id_b = env.register_contract(None, RegistryContract);
+    let id_a = env.register(RegistryContract, ());
+    let id_b = env.register(RegistryContract, ());
     let admin = Address::generate(&env);
     let a = RegistryContractClient::new(&env, &id_a);
     let b = RegistryContractClient::new(&env, &id_b);

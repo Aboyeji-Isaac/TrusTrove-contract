@@ -60,7 +60,7 @@ fn setup_fee_lifecycle() -> FeeLifecycle {
     let buyer = Address::generate(&env);
     let lp = Address::generate(&env);
     let treasury = Address::generate(&env);
-    let usdc_id = env.register_contract(None, MockToken);
+    let usdc_id = env.register(MockToken, ());
     for address in [&lp, &buyer] {
         let key = TKey(address.clone());
         env.as_contract(&usdc_id, || {
@@ -70,7 +70,7 @@ fn setup_fee_lifecycle() -> FeeLifecycle {
         });
     }
 
-    let registry_id = env.register_contract(None, RegistryContract);
+    let registry_id = env.register(RegistryContract, ());
     let registry = RegistryContractClient::new(&env, &registry_id);
     registry.initialize(&admin);
     let metadata: Map<String, String> = Map::new(&env);
@@ -79,16 +79,16 @@ fn setup_fee_lifecycle() -> FeeLifecycle {
     registry.verify_profile(&admin, &issuer, &true);
     registry.verify_profile(&admin, &buyer, &true);
 
-    let invoice_id = env.register_contract(None, InvoiceContract);
-    let escrow_id = env.register_contract(None, EscrowContract);
-    let pool_id = env.register_contract(None, PoolContract);
+    let invoice_id = env.register(InvoiceContract, ());
+    let escrow_id = env.register(EscrowContract, ());
+    let pool_id = env.register(PoolContract, ());
     let invoice = InvoiceContractClient::new(&env, &invoice_id);
     invoice.initialize(&admin, &registry_id);
     invoice.add_supported_asset(&usdc_id);
     invoice.set_pool_contract(&pool_id);
     invoice.set_escrow_contract(&escrow_id);
 
-    let agent_reg_id = env.register_contract(None, MockAgentRegistry);
+    let agent_reg_id = env.register(MockAgentRegistry, ());
     MockAgentRegistryClient::new(&env, &agent_reg_id).register_agent(
         &test_agent_id(&env),
         &trusttrove_invoice::Agent {
@@ -280,7 +280,7 @@ fn test_cross_contract_invoice_pool_escrow_lifecycle() {
     let lp = Address::generate(&env);
 
     // 1. Deploy & initialize mock USDC token
-    let usdc_id = env.register_contract(None, MockToken);
+    let usdc_id = env.register(MockToken, ());
     let lp_key = TKey(lp.clone());
     let buyer_key = TKey(buyer.clone());
     env.as_contract(&usdc_id, || {
@@ -293,7 +293,7 @@ fn test_cross_contract_invoice_pool_escrow_lifecycle() {
     });
 
     // 2. Deploy real Registry contract & register participants
-    let registry_id = env.register_contract(None, RegistryContract);
+    let registry_id = env.register(RegistryContract, ());
     let registry = RegistryContractClient::new(&env, &registry_id);
     registry.initialize(&admin);
 
@@ -306,9 +306,9 @@ fn test_cross_contract_invoice_pool_escrow_lifecycle() {
     assert!(registry.is_verified(&buyer));
 
     // 3. Deploy real Invoice, Escrow, and Pool contracts
-    let invoice_id = env.register_contract(None, InvoiceContract);
-    let escrow_id = env.register_contract(None, EscrowContract);
-    let pool_id = env.register_contract(None, PoolContract);
+    let invoice_id = env.register(InvoiceContract, ());
+    let escrow_id = env.register(EscrowContract, ());
+    let pool_id = env.register(PoolContract, ());
 
     let invoice = InvoiceContractClient::new(&env, &invoice_id);
     invoice.initialize(&admin, &registry_id);
@@ -317,7 +317,7 @@ fn test_cross_contract_invoice_pool_escrow_lifecycle() {
     invoice.set_escrow_contract(&escrow_id);
 
     // Configure Agent Registry for attestations
-    let agent_reg_id = env.register_contract(None, MockAgentRegistry);
+    let agent_reg_id = env.register(MockAgentRegistry, ());
     let agent_reg = MockAgentRegistryClient::new(&env, &agent_reg_id);
     agent_reg.register_agent(
         &test_agent_id(&env),
@@ -500,10 +500,10 @@ fn test_cross_contract_unauthorized_pool_setter_rejected() {
     env.set_auths(&[]);
 
     let admin = Address::generate(&env);
-    let registry_id = env.register_contract(None, RegistryContract);
-    let invoice_id = env.register_contract(None, InvoiceContract);
-    let escrow_id = env.register_contract(None, EscrowContract);
-    let pool_id = env.register_contract(None, PoolContract);
+    let registry_id = env.register(RegistryContract, ());
+    let invoice_id = env.register(InvoiceContract, ());
+    let escrow_id = env.register(EscrowContract, ());
+    let pool_id = env.register(PoolContract, ());
     let usdc_id = Address::generate(&env);
 
     let pool = PoolContractClient::new(&env, &pool_id);
@@ -536,7 +536,7 @@ fn test_cross_contract_partial_repayment_lifecycle() {
     let lp = Address::generate(&env);
 
     // 1. Deploy & initialize mock USDC token
-    let usdc_id = env.register_contract(None, MockToken);
+    let usdc_id = env.register(MockToken, ());
     let lp_key = TKey(lp.clone());
     let buyer_key = TKey(buyer.clone());
     env.as_contract(&usdc_id, || {
@@ -549,7 +549,7 @@ fn test_cross_contract_partial_repayment_lifecycle() {
     });
 
     // 2. Deploy real Registry contract & register participants
-    let registry_id = env.register_contract(None, RegistryContract);
+    let registry_id = env.register(RegistryContract, ());
     let registry = RegistryContractClient::new(&env, &registry_id);
     registry.initialize(&admin);
 
@@ -560,9 +560,9 @@ fn test_cross_contract_partial_repayment_lifecycle() {
     registry.verify_profile(&admin, &buyer, &true);
 
     // 3. Deploy real Invoice, Escrow, and Pool contracts
-    let invoice_id = env.register_contract(None, InvoiceContract);
-    let escrow_id = env.register_contract(None, EscrowContract);
-    let pool_id = env.register_contract(None, PoolContract);
+    let invoice_id = env.register(InvoiceContract, ());
+    let escrow_id = env.register(EscrowContract, ());
+    let pool_id = env.register(PoolContract, ());
 
     let invoice = InvoiceContractClient::new(&env, &invoice_id);
     invoice.initialize(&admin, &registry_id);
@@ -570,7 +570,7 @@ fn test_cross_contract_partial_repayment_lifecycle() {
     invoice.set_pool_contract(&pool_id);
     invoice.set_escrow_contract(&escrow_id);
 
-    let agent_reg_id = env.register_contract(None, MockAgentRegistry);
+    let agent_reg_id = env.register(MockAgentRegistry, ());
     let agent_reg = MockAgentRegistryClient::new(&env, &agent_reg_id);
     agent_reg.register_agent(
         &test_agent_id(&env),
@@ -689,7 +689,7 @@ fn test_partial_repayment_then_default_lifecycle() {
     let lp = Address::generate(&env);
 
     // 1. Deploy & initialize mock USDC token
-    let usdc_id = env.register_contract(None, MockToken);
+    let usdc_id = env.register(MockToken, ());
     let lp_key = TKey(lp.clone());
     let buyer_key = TKey(buyer.clone());
     env.as_contract(&usdc_id, || {
@@ -702,7 +702,7 @@ fn test_partial_repayment_then_default_lifecycle() {
     });
 
     // 2. Deploy real Registry contract & register participants
-    let registry_id = env.register_contract(None, RegistryContract);
+    let registry_id = env.register(RegistryContract, ());
     let registry = RegistryContractClient::new(&env, &registry_id);
     registry.initialize(&admin);
 
@@ -713,9 +713,9 @@ fn test_partial_repayment_then_default_lifecycle() {
     registry.verify_profile(&admin, &buyer, &true);
 
     // 3. Deploy real Invoice, Escrow, and Pool contracts
-    let invoice_id = env.register_contract(None, InvoiceContract);
-    let escrow_id = env.register_contract(None, EscrowContract);
-    let pool_id = env.register_contract(None, PoolContract);
+    let invoice_id = env.register(InvoiceContract, ());
+    let escrow_id = env.register(EscrowContract, ());
+    let pool_id = env.register(PoolContract, ());
 
     let invoice = InvoiceContractClient::new(&env, &invoice_id);
     invoice.initialize(&admin, &registry_id);
@@ -723,7 +723,7 @@ fn test_partial_repayment_then_default_lifecycle() {
     invoice.set_pool_contract(&pool_id);
     invoice.set_escrow_contract(&escrow_id);
 
-    let agent_reg_id = env.register_contract(None, MockAgentRegistry);
+    let agent_reg_id = env.register(MockAgentRegistry, ());
     let agent_reg = MockAgentRegistryClient::new(&env, &agent_reg_id);
     agent_reg.register_agent(
         &test_agent_id(&env),
@@ -883,7 +883,7 @@ fn test_partial_repayment_then_default_pool_loss_calculation() {
     let lp = Address::generate(&env);
 
     // 1. Deploy & initialize mock USDC token
-    let usdc_id = env.register_contract(None, MockToken);
+    let usdc_id = env.register(MockToken, ());
     let lp_key = TKey(lp.clone());
     let buyer_key = TKey(buyer.clone());
     env.as_contract(&usdc_id, || {
@@ -896,7 +896,7 @@ fn test_partial_repayment_then_default_pool_loss_calculation() {
     });
 
     // 2. Deploy real Registry contract & register participants
-    let registry_id = env.register_contract(None, RegistryContract);
+    let registry_id = env.register(RegistryContract, ());
     let registry = RegistryContractClient::new(&env, &registry_id);
     registry.initialize(&admin);
 
@@ -907,9 +907,9 @@ fn test_partial_repayment_then_default_pool_loss_calculation() {
     registry.verify_profile(&admin, &buyer, &true);
 
     // 3. Deploy real Invoice, Escrow, and Pool contracts
-    let invoice_id = env.register_contract(None, InvoiceContract);
-    let escrow_id = env.register_contract(None, EscrowContract);
-    let pool_id = env.register_contract(None, PoolContract);
+    let invoice_id = env.register(InvoiceContract, ());
+    let escrow_id = env.register(EscrowContract, ());
+    let pool_id = env.register(PoolContract, ());
 
     let invoice = InvoiceContractClient::new(&env, &invoice_id);
     invoice.initialize(&admin, &registry_id);
@@ -917,7 +917,7 @@ fn test_partial_repayment_then_default_pool_loss_calculation() {
     invoice.set_pool_contract(&pool_id);
     invoice.set_escrow_contract(&escrow_id);
 
-    let agent_reg_id = env.register_contract(None, MockAgentRegistry);
+    let agent_reg_id = env.register(MockAgentRegistry, ());
     let agent_reg = MockAgentRegistryClient::new(&env, &agent_reg_id);
     agent_reg.register_agent(
         &test_agent_id(&env),
