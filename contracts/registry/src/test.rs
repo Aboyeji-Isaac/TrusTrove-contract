@@ -809,6 +809,7 @@ fn test_batch_register_issuers_all_new() {
     assert_eq!(client.get_profile(&issuer1).role(), crate::Role::Issuer);
     assert_eq!(client.get_profile(&issuer2).role(), crate::Role::Issuer);
     assert_eq!(client.get_profile(&issuer3).role(), crate::Role::Issuer);
+    assert_eq!(client.get_profile(&issuer1).metadata.len(), 0);
 }
 
 #[test]
