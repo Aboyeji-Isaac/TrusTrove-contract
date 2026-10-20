@@ -1472,7 +1472,8 @@ fn test_set_max_utilization_emits_event() {
     // A rejected update (> 10000) must not emit the event.
     assert!(te.pool.try_set_max_utilization(&te.admin, &10001).is_err());
     let events_after = te.env.events().all();
-    assert_eq!(events_after.len(), events.len());
+    // sdk >=22 buffers hold only the failed call's own events: none.
+    assert_eq!(events_after.len(), 0);
 }
 
 //  GET_USDC_ASSET TESTS
@@ -2025,6 +2026,9 @@ fn test_receive_repayment() {
     let position_before = te.pool.get_lp_position(&te.lp);
     let result = te.pool.receive_repayment(&invoice_id, &10_000_000_000);
     assert!(result);
+// Capture before further queries: sdk >=22 test Envs reset the event
+    // buffer at every top-level invocation.
+    let events = te.env.events().all();
 
     let after = te.pool.get_stats();
     let position_after = te.pool.get_lp_position(&te.lp);
@@ -2037,7 +2041,6 @@ fn test_receive_repayment() {
         position_before.usdc_value + yield_amount
     );
 
-    let events = te.env.events().all();
     let (contract, topics, data) = events.get(events.len() - 1).unwrap();
     assert_eq!(contract, te.pool_id);
     assert_eq!(
@@ -2174,6 +2177,9 @@ fn test_receive_repayment_with_refund_happy_path() {
         .pool
         .receive_repayment_with_refund(&invoice_id, &amount, &refund, &te.buyer);
     assert!(result);
+// Capture before further queries: sdk >=22 test Envs reset the event
+    // buffer at every top-level invocation.
+    let events = te.env.events().all();
 
     // Pool accounting reflects only the yield slice, not the refunded portion.
     let after = te.pool.get_stats();
@@ -2203,8 +2209,7 @@ fn test_receive_repayment_with_refund_happy_path() {
         te.env.storage().persistent().has(&funded_key)
     }));
 
-    // Event payload/topics for this entry point.
-    let events = te.env.events().all();
+    // Event payload/topics for this entry point (from the capture above).
     let (contract, topics, data) = events.get(events.len() - 1).unwrap();
     assert_eq!(contract, te.pool_id);
     assert_eq!(
@@ -2260,6 +2265,9 @@ fn test_receive_repayment_with_refund_zero_refund_matches_receive_repayment() {
         .pool
         .receive_repayment_with_refund(&invoice_id, &amount, &0u128, &te.buyer);
     assert!(result);
+// Capture before further queries: sdk >=22 test Envs reset the event
+    // buffer at every top-level invocation.
+    let events = te.env.events().all();
 
     let after = te.pool.get_stats();
     let position_after = te.pool.get_lp_position(&te.lp);
@@ -2281,8 +2289,8 @@ fn test_receive_repayment_with_refund_zero_refund_matches_receive_repayment() {
     let buyer_after = MockTokenClient::new(&te.env, &te.usdc_id).balance(&te.buyer);
     assert_eq!(buyer_after, buyer_before);
 
-    // The event still fires even though no refund transfer happened.
-    let events = te.env.events().all();
+    // The event still fires even though no refund transfer happened
+    // (buffer captured right after the call above).
     let (contract, topics, data) = events.get(events.len() - 1).unwrap();
     assert_eq!(contract, te.pool_id);
     assert_eq!(
@@ -2479,6 +2487,9 @@ fn test_handle_default() {
         .set_timestamp(te.env.ledger().timestamp() + 60);
     let result = te.pool.handle_default(&invoice_id);
     assert!(result);
+// Capture before further queries: sdk >=22 test Envs reset the event
+    // buffer at every top-level invocation.
+    let events = te.env.events().all();
 
     let after = te.pool.get_stats();
     let position_after = te.pool.get_lp_position(&te.lp);
@@ -2500,7 +2511,6 @@ fn test_handle_default() {
         position_before.usdc_value - funded_amount
     );
 
-    let events = te.env.events().all();
     let (contract, topics, data) = events.get(events.len() - 1).unwrap();
     assert_eq!(contract, te.pool_id);
     assert_eq!(
@@ -3198,6 +3208,9 @@ fn test_partial_withdraw_succeeds_within_available_liquidity() {
 
     // Partial withdraw of exactly the available amount should succeed
     let returned = te.pool.withdraw(&te.lp, &available_liquidity);
+// Capture before further queries: sdk >=22 test Envs reset the event
+    // buffer at every top-level invocation.
+    let events = te.env.events().all();
     assert_eq!(returned, available_liquidity);
 
     // Verify pool state after partial withdraw
@@ -3212,8 +3225,7 @@ fn test_partial_withdraw_succeeds_within_available_liquidity() {
     assert_eq!(pos.usdc_value, DEFAULT_FUNDED_AMOUNT);
 
     // Verify events
-    // Event payload: (usdc_amount, shares_burned)
-    let events = te.env.events().all();
+    // Event payload: (usdc_amount, shares_burned) — buffer captured above.
     let (contract, topics, data) = events.get(events.len() - 1).unwrap();
     assert_eq!(contract, te.pool_id);
     assert_eq!(
@@ -3287,6 +3299,9 @@ fn test_withdraw_after_repayment_returns_more_than_deposited() {
     assert_eq!(pos.usdc_value, deposit_amount + expected_yield);
 
     let usdc_returned = te.pool.withdraw(&te.lp, &pos.shares);
+// Capture before further queries: sdk >=22 test Envs reset the event
+    // buffer at every top-level invocation.
+    let events = te.env.events().all();
 
     assert!(
         usdc_returned > deposit_amount,
@@ -3304,7 +3319,6 @@ fn test_withdraw_after_repayment_returns_more_than_deposited() {
     let final_pos = te.pool.get_lp_position(&te.lp);
     assert_eq!(final_pos.yield_earned, expected_yield);
 
-    let events = te.env.events().all();
     let (contract, topics, data) = events.get(events.len() - 1).unwrap();
     assert_eq!(contract, te.pool_id);
     assert_eq!(
@@ -5481,11 +5495,11 @@ fn test_approve_emits_allowance_approved_event() {
 
     let spender = Address::generate(&te.env);
     let expires = te.env.ledger().sequence() + 100;
-    let before = te.env.events().all().len();
     te.pool.approve(&te.lp, &spender, &5_000_000_000, &expires);
 
     let events = te.env.events().all();
-    assert_eq!(events.len(), before + 1);
+    // sdk >=22: approve's own buffer holds exactly its allowance_approved event.
+    assert_eq!(events.len(), 1);
     let (contract, topics, data) = events.get(events.len() - 1).unwrap();
     assert_eq!(contract, te.pool_id);
     assert_eq!(topics.len(), 2);
@@ -5507,7 +5521,7 @@ fn test_approve_emits_allowance_approved_event() {
         .pool
         .try_approve(&te.lp, &spender, &1_000, &te.env.ledger().sequence())
         .is_err());
-    assert_eq!(te.env.events().all().len(), events.len());
+    assert_eq!(te.env.events().all().len(), 0);
 }
 
 //  ISSUE #757: SEP-41 SHARE METADATA
@@ -5631,13 +5645,13 @@ fn test_share_metadata_unreadable_before_initialize() {
 fn test_deposit_mints_through_shared_helper_without_changing_behaviour() {
     let te = setup();
 
-    let before = te.env.events().all().len();
     let shares = te.pool.deposit(&te.lp, &10_000_000_000);
     assert_eq!(shares, 10_000_000_000);
 
-    // One event, unchanged: `lp_deposited(lp, usdc_amount, shares_issued)`.
+    // One event, unchanged: `lp_deposited(lp, usdc_amount, shares_issued)` —
+    // in deposit's own per-invocation buffer (sdk >=22).
     let events = te.env.events().all();
-    assert_eq!(events.len(), before + 1);
+    assert_eq!(events.len(), 1);
     let (contract, topics, data) = events.get(events.len() - 1).unwrap();
     assert_eq!(contract, te.pool_id);
     assert_eq!(topics.len(), 2);
@@ -5696,12 +5710,12 @@ fn test_share_supply_stays_consistent_across_mint_and_burn() {
 fn test_set_protocol_fee_emits_event_with_old_and_new_values() {
     let te = setup();
     let treasury = Address::generate(&te.env);
-    let before = te.env.events().all().len();
 
     te.pool.set_protocol_fee(&750, &treasury);
 
     let events = te.env.events().all();
-    assert_eq!(events.len(), before + 1);
+    // sdk >=22: this buffer holds only the set_protocol_fee call's event.
+    assert_eq!(events.len(), 1);
     let (contract, topics, data) = events.get(events.len() - 1).unwrap();
     assert_eq!(contract, te.pool_id);
     assert_eq!(topics.len(), 1);
@@ -5726,9 +5740,9 @@ fn test_set_protocol_fee_emits_event_with_old_and_new_values() {
 
     // A rejected change (above MAX_PROTOCOL_FEE_BPS) must not emit anything,
     // and must leave the stored fee at 1500.
-    let before_rejected = events.len();
     assert!(te.pool.try_set_protocol_fee(&2001, &treasury).is_err());
-    assert_eq!(te.env.events().all().len(), before_rejected);
+    // A rejected change emits nothing in its own per-invocation buffer.
+    assert_eq!(te.env.events().all().len(), 0);
     assert_eq!(te.pool.get_protocol_fee_bps(), 1500);
 }
 
@@ -6197,10 +6211,10 @@ fn test_transfer_and_transfer_from_emit_standard_transfer_event() {
     let spender = Address::generate(&te.env);
     let expires = te.env.ledger().sequence() + 100;
 
-    let before = te.env.events().all().len();
     te.pool.transfer(&te.lp, &recipient, &1_000_000_000);
     let events = te.env.events().all();
-    assert_eq!(events.len(), before + 1);
+    // sdk >=22: transfer's own buffer holds exactly its transfer event.
+    assert_eq!(events.len(), 1);
     let (contract, topics, data) = events.get(events.len() - 1).unwrap();
     assert_eq!(contract, te.pool_id);
     assert_eq!(topics.len(), 2);
@@ -6219,13 +6233,25 @@ fn test_transfer_and_transfer_from_emit_standard_transfer_event() {
 
     // The allowance path emits the identical standard event shape (approve
     // itself emits `allowance_approved`, hence the +2).
-    let before = te.env.events().all().len();
     te.pool.approve(&te.lp, &spender, &2_000_000_000, &expires);
+    let events_after_approve = te.env.events().all();
     te.pool
         .transfer_from(&spender, &te.lp, &recipient, &2_000_000_000);
     let events = te.env.events().all();
     let (contract, topics, data) = events.get(events.len() - 1).unwrap();
-    assert_eq!(events.len(), before + 2);
+    // sdk >=22 keeps each top-level call's events in its own buffer:
+    // approve emitted `allowance_approved` (1 event), transfer_from emitted
+    // the standard `transfer` event (1 event).
+    assert_eq!(events_after_approve.len(), 1);
+    assert_eq!(
+        Symbol::try_from_val(
+            &te.env,
+            &events_after_approve.get(0).unwrap().1.get(0).unwrap()
+        )
+        .unwrap(),
+        Symbol::new(&te.env, "allowance_approved")
+    );
+    assert_eq!(events.len(), 1);
     assert_eq!(contract, te.pool_id);
     assert_eq!(
         Symbol::try_from_val(&te.env, &topics.get(0).unwrap()).unwrap(),
@@ -6714,11 +6740,13 @@ fn test_pool_transfer_ownership_changes_admin_and_emits_event() {
     let new_admin = Address::generate(&te.env);
 
     te.pool.transfer_ownership(&new_admin);
+// Capture before further queries: sdk >=22 test Envs reset the event
+    // buffer at every top-level invocation.
+    let events = te.env.events().all();
 
     assert_eq!(te.pool.get_admin(), new_admin);
 
-    // ownership_transferred(old_admin, new_admin)
-    let events = te.env.events().all();
+    // ownership_transferred(old_admin, new_admin) — buffer captured above.
     let (contract, topics, data) = events.get(events.len() - 1).unwrap();
     assert_eq!(contract, te.pool_id);
     assert_eq!(
@@ -7624,13 +7652,24 @@ fn check_solvency_invariant(te: &TestEnv, usdc: &MockTokenClient) -> Result<(), 
 /// Sums the `protocol_cut` field of `repayment_received` events emitted by the pool
 /// since the previous scan (`seen` advances in place), so the treasury assertion reads
 /// the fee the contract actually booked instead of a re-derivation of its math.
-fn solvency_new_protocol_cuts(te: &TestEnv, seen: &mut usize) -> u128 {
-    let events = te.env.events().all();
+/// Sums the `protocol_cut` field of `repayment_received` events carried by a
+/// step's own per-invocation event buffer (sdk >=22 test Envs reset the
+/// buffer at every top-level invocation, so the caller captures it right
+/// after `run_solvency_step`), so the treasury assertion reads the fee the
+/// contract actually booked instead of a re-derivation of its math.
+fn solvency_new_protocol_cuts(
+    te: &TestEnv,
+    events: &soroban_sdk::Vec<
+        (
+            soroban_sdk::Address,
+            soroban_sdk::Vec<soroban_sdk::Val>,
+            soroban_sdk::Val,
+        ),
+    >,
+) -> u128 {
     let name = Symbol::new(&te.env, "repayment_received");
     let mut cuts = 0u128;
-    while *seen < events.len() as usize {
-        let (contract, topics, data) = events.get(*seen as u32).unwrap();
-        *seen += 1;
+    for (contract, topics, data) in events.iter() {
         if contract != te.pool_id || topics.is_empty() {
             continue;
         }
@@ -7692,7 +7731,6 @@ fn prop_pool_token_balance_always_covers_available_liquidity() {
                     create_and_list(&te, &te.usdc_id),
                 ];
 
-                let mut seen_events = te.env.events().all().len() as usize;
                 let mut protocol_cuts = 0u128;
 
                 check_solvency_invariant(&te, &usdc)?;
@@ -7707,9 +7745,12 @@ fn prop_pool_token_balance_always_covers_available_liquidity() {
                         }
                     }
 
+                    // Capture the step's final call events before the
+                    // invariant's get_stats query clears the buffer (sdk >=22).
+                    let step_events = te.env.events().all();
                     // The invariant holds after every step, accepted or rejected.
                     check_solvency_invariant(&te, &usdc)?;
-                    protocol_cuts += solvency_new_protocol_cuts(&te, &mut seen_events);
+                    protocol_cuts += solvency_new_protocol_cuts(&te, &step_events);
                 }
 
                 // Treasury conservation from the AC: every booked protocol cut actually
