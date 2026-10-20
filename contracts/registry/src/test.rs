@@ -674,13 +674,18 @@ fn test_reinstate_emits_exactly_one_address_reinstated_event() {
     // Revoking does not reinstate anything.
     assert_eq!(count_events_named(&env, "address_reinstated"), 0);
 
+    // sdk >=22 test Envs reset the event buffer at every top-level
+    // invocation, so each assertion below inspects the buffer of the call it
+    // just made, rather than a cumulative stream. The "exactly once per real
+    // transition" property is preserved: the reinstate that changes state
+    // emits one, the no-op reinstate emits none of its own.
     assert!(client.reinstate(&issuer));
     assert_eq!(count_events_named(&env, "address_reinstated"), 1);
 
     // The profile is `Verified` now, so the second call takes the no-op path
     // and must not publish a second event.
     assert!(client.reinstate(&issuer));
-    assert_eq!(count_events_named(&env, "address_reinstated"), 1);
+    assert_eq!(count_events_named(&env, "address_reinstated"), 0);
 }
 
 #[test]
