@@ -194,8 +194,15 @@ fn get_balance(env: &Env, token_id: &Address, addr: &Address) -> i128 {
     MockTokenClient::new(env, token_id).balance(addr)
 }
 
+/// Captured contract events. Since soroban-sdk 22 the test Env resets its
+/// event buffer before every top-level contract invocation, so tests must
+/// capture `env.events().all()` immediately after the call that emits.
+type CapturedEvents =
+    soroban_sdk::Vec<(soroban_sdk::Address, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val)>;
+
 fn assert_last_event_three<T1, T2>(
     env: &Env,
+    events: &CapturedEvents,
     expected_name: &str,
     expected_topic1: T1,
     expected_topic2: T2,
@@ -206,7 +213,6 @@ fn assert_last_event_three<T1, T2>(
     <T1 as TryFromVal<Env, soroban_sdk::Val>>::Error: core::fmt::Debug,
     <T2 as TryFromVal<Env, soroban_sdk::Val>>::Error: core::fmt::Debug,
 {
-    let events = env.events().all();
     let (_, topics, data) = events.last().expect("expected at least one event");
 
     let topic0: Symbol = Symbol::try_from_val(env, &topics.get(0).unwrap()).unwrap();
@@ -222,6 +228,7 @@ fn assert_last_event_three<T1, T2>(
 
 fn assert_last_event_four<T1, T2, T3>(
     env: &Env,
+    events: &CapturedEvents,
     expected_name: &str,
     expected_topic1: T1,
     expected_topic2: T2,
@@ -235,7 +242,6 @@ fn assert_last_event_four<T1, T2, T3>(
     <T2 as TryFromVal<Env, soroban_sdk::Val>>::Error: core::fmt::Debug,
     <T3 as TryFromVal<Env, soroban_sdk::Val>>::Error: core::fmt::Debug,
 {
-    let events = env.events().all();
     let (_, topics, data) = events.last().expect("expected at least one event");
 
     let topic0: Symbol = Symbol::try_from_val(env, &topics.get(0).unwrap()).unwrap();
@@ -857,11 +863,15 @@ fn test_handle_default_invoked_by_admin_succeeds() {
     // Call handle_default with admin as the caller
     let result = client.handle_default(&invoice_id, &admin);
     assert!(result);
+    // sdk >= 22 test Env clears its event buffer before every top-level
+    // invocation, so capture the emitted events right after the call.
+    let events_after_call = env.events().all();
 
     let locked = client.get_locked(&invoice_id);
     assert_eq!(locked, 0);
     assert_last_event_four(
         &env,
+        &events_after_call,
         "default_resolved",
         invoice_id.clone(),
         _pool,
@@ -881,12 +891,14 @@ fn test_handle_default_admin_can_trigger() {
     // Admin can directly trigger default resolution (emergency / recovery path)
     let result = client.handle_default(&invoice_id, &admin);
     assert!(result);
+    let events_after_call = env.events().all();
 
     let locked = client.get_locked(&invoice_id);
     assert_eq!(locked, 0);
     // Funds are always returned to the pool address regardless of who triggered
     assert_last_event_four(
         &env,
+        &events_after_call,
         "default_resolved",
         invoice_id.clone(),
         pool,
@@ -944,9 +956,11 @@ fn test_handle_default_second_call_returns_false_without_side_effects() {
     // First call: should succeed, remove the record, and emit default_resolved
     let result1 = client.handle_default(&invoice_id, &pool);
     assert!(result1);
+    let events_after_call = env.events().all();
     assert_eq!(client.get_locked(&invoice_id), 0);
     assert_last_event_four(
         &env,
+        &events_after_call,
         "default_resolved",
         invoice_id.clone(),
         pool.clone(),
@@ -954,20 +968,20 @@ fn test_handle_default_second_call_returns_false_without_side_effects() {
         amount,
     );
 
-    // Capture event count after first (successful) call
-    let event_count_after_first = env.events().all().len();
-
     // Second call: should return false with no side effects
     let result2 = client.handle_default(&invoice_id, &pool);
     assert!(!result2);
+    let events_after_second = env.events().all();
 
     // Verify state is unchanged — get_locked still 0
     assert_eq!(client.get_locked(&invoice_id), 0);
 
-    // Verify no new events were emitted by the second call
+    // Verify no new events were emitted by the second call. sdk >= 22 test
+    // Env resets its event buffer before every top-level invocation, so the
+    // buffer captured right after the second call is exactly its own events.
     assert_eq!(
-        env.events().all().len(),
-        event_count_after_first,
+        events_after_second.len(),
+        0,
         "second handle_default must not emit any events"
     );
 }
@@ -1227,6 +1241,7 @@ fn test_get_history_returns_action_log() {
 
     client.lock(&invoice_id, &amount, &issuer);
     client.release_to_issuer(&invoice_id, &issuer);
+    let events_after_call = env.events().all();
 
     let history: Vec<EscrowEvent> = client.get_history(&invoice_id);
     assert_eq!(history.len(), 2);
@@ -1245,6 +1260,7 @@ fn test_get_history_returns_action_log() {
     assert_eq!(client.get_locked(&invoice_id), 0);
     assert_last_event_three(
         &env,
+        &events_after_call,
         "released_to_issuer",
         invoice_id.clone(),
         issuer,
@@ -1761,6 +1777,7 @@ fn test_release_after_timeout_returns_funds_to_pool() {
     // No auths: the call is permissionless.
     env.set_auths(&[]);
     assert!(client.release_after_timeout(&invoice_id));
+    let events_after_call = env.events().all();
 
     assert_eq!(
         get_balance(&env, &usdc_id, &pool),
@@ -1773,8 +1790,9 @@ fn test_release_after_timeout_returns_funds_to_pool() {
         EscrowAction::TimeoutReleased
     );
 
-    let events = env.events().all();
-    let (_, topics, data) = events.last().expect("expected timeout_released event");
+    let (_, topics, data) = events_after_call
+        .last()
+        .expect("expected timeout_released event");
     let name: Symbol = Symbol::try_from_val(&env, &topics.get(0).unwrap()).unwrap();
     assert_eq!(name, Symbol::new(&env, "timeout_released"));
     assert_eq!(u128::try_from_val(&env, &data).unwrap(), amount);
