@@ -462,15 +462,15 @@ fn test_submit_attestation_inactive_agent() {
     sig_bytes[64] = recid.to_byte();
     let signature = BytesN::from_array(&env, &sig_bytes);
 
-    // Record event count before the call. submit_attestation emits
-    // `attestation_submitted` only on success, so a failing call must not
-    // increase this count.
-    let events_before = env.events().all().len();
-
     // Use the fallible client variant so we can assert on the Result and then
     // continue inspecting storage/events. `try_submit_attestation` returns the
     // typed error path (#21 = UntrustedSigner) rather than aborting the test.
     let result = client.try_submit_attestation(&invoice_id, &payload_bytes, &signature);
+    // sdk >=22 test Envs reset the event buffer at every top-level
+    // invocation, so this capture holds exactly the rejected call's own
+    // events; submit_attestation emits `attestation_submitted` only on
+    // success, so the buffer must be empty.
+    let events_after_call = env.events().all();
     match result {
         Ok(_) => panic!("inactive agent must not be able to submit an attestation"),
         Err(inner) => {
@@ -487,8 +487,8 @@ fn test_submit_attestation_inactive_agent() {
         "rejected attestation must not be stored"
     );
     assert_eq!(
-        env.events().all().len(),
-        events_before,
+        events_after_call.len(),
+        0,
         "rejected attestation must not emit attestation_submitted"
     );
 }
@@ -1000,6 +1000,9 @@ fn test_create_succeeds_when_due_date_one_second_in_future() {
     let face_value: u128 = DEFAULT_FACE_VALUE;
 
     let invoice_id = client.create(&issuer, &buyer, &face_value, &just_future_due_date, &usdc);
+    // Capture the create call's own events before the get query resets the
+    // per-invocation buffer (sdk >=22 test Env semantics).
+    let events_after_create = env.events().all();
 
     // State: invoice record exists at Created with the boundary due_date.
     let invoice = client.get(&invoice_id);
@@ -1015,7 +1018,7 @@ fn test_create_succeeds_when_due_date_one_second_in_future() {
     // shape here; detailed per-topic comparisons live in the dedicated event
     // integration tests because soroban_sdk's `Val` does not implement
     // `PartialEq` for ad-hoc equality assertions.
-    let events = env.events().all();
+    let events = events_after_create;
     let (event_contract, _topics, _data) = events.last().expect("expected at least one event");
     assert_eq!(event_contract, client.address.clone());
 }
@@ -1169,13 +1172,14 @@ fn test_list_for_financing_discount_bps_min_boundary() {
     attest(&env, &client, &invoice_id);
     let result = client.list_for_financing(&invoice_id, &1);
     assert!(result);
+    let events_after_call = env.events().all();
 
     let invoice = client.get(&invoice_id);
     assert_eq!(invoice.status, InvoiceStatus::Listed);
     assert_eq!(invoice.discount_bps, 1);
 
     let contract_id = client.address.clone();
-    let events = env.events().all();
+    let events = events_after_call;
     let (event_contract, topics, data) = events.last().expect("expected at least one event");
     assert_eq!(event_contract, contract_id);
     assert_eq!(
@@ -1195,13 +1199,14 @@ fn test_list_for_financing_discount_bps_max_boundary() {
     attest(&env, &client, &invoice_id);
     let result = client.list_for_financing(&invoice_id, &5000);
     assert!(result);
+    let events_after_call = env.events().all();
 
     let invoice = client.get(&invoice_id);
     assert_eq!(invoice.status, InvoiceStatus::Listed);
     assert_eq!(invoice.discount_bps, 5000);
 
     let contract_id = client.address.clone();
-    let events = env.events().all();
+    let events = events_after_call;
     let (event_contract, topics, data) = events.last().expect("expected at least one event");
     assert_eq!(event_contract, contract_id);
     assert_eq!(
@@ -1988,6 +1993,7 @@ fn test_mark_funded_updates_counts_index_and_emits_one_event() {
         .is_empty());
 
     assert!(client.mark_funded(&invoice_id, &pool, &usdc, &DEFAULT_FUNDED_AMOUNT));
+    let events_after_mark_funded = env.events().all();
 
     let counts = client.get_counts();
     assert_eq!(counts.get(String::from_str(&env, "Listed")), Some(0));
@@ -2002,7 +2008,7 @@ fn test_mark_funded_updates_counts_index_and_emits_one_event() {
     assert_eq!(funded.get(0).unwrap().status, InvoiceStatus::Funded);
 
     let mut funded_event_count = 0;
-    for (contract, topics, data) in env.events().all().iter() {
+    for (contract, topics, data) in events_after_mark_funded.iter() {
         if contract != client.address {
             continue;
         }
@@ -3175,10 +3181,11 @@ fn test_add_supported_asset() {
 
     assert!(!client.is_supported_asset(&asset));
     client.add_supported_asset(&asset);
+    let events_after_call = env.events().all();
     assert!(client.is_supported_asset(&asset));
     assert_eq!(client.get_supported_asset_count(), 2);
 
-    let events = env.events().all();
+    let events = events_after_call;
     let (event_contract, topics, data) = events.last().expect("expected at least one event");
     assert_eq!(event_contract, client.address);
     assert_eq!(
@@ -3388,13 +3395,15 @@ fn test_repay_from_confirmed() {
 
     assert_eq!(client.get(&invoice_id).status, InvoiceStatus::Confirmed);
 
-    let events_before = env.events().all().len();
     client.repay(&invoice_id);
+    // sdk >=22: this buffer holds exactly the repay call's own events, and
+    // a successful repay must emit at least one (invoice_repaid).
+    let events_after_repay = env.events().all();
 
     let invoice = client.get(&invoice_id);
     assert_eq!(invoice.status, InvoiceStatus::Repaid);
     assert!(invoice.repaid_at.is_some());
-    assert!(env.events().all().len() > events_before);
+    assert!(!events_after_repay.is_empty());
 }
 
 #[test]
@@ -3629,6 +3638,7 @@ fn test_create_writes_to_issuer_index() {
     let due_date = env.ledger().timestamp() + DEFAULT_DUE_OFFSET;
 
     let invoice_id = client.create(&issuer, &buyer, &face_value, &due_date, &usdc);
+    let events_after_create = env.events().all();
 
     // Direct storage read: issuer index count and entry
     env.as_contract(&client.address, || {
@@ -3658,7 +3668,9 @@ fn test_create_writes_to_issuer_index() {
     assert_eq!(empty.len(), 0);
 
     // Verify the invoice_created event was emitted by the invoice contract
-    let events = env.events().all();
+    // (captured right after the create call — sdk >=22 buffers are
+    // per-invocation).
+    let events = events_after_create;
     let (event_contract, _topics, _data) = events.last().expect("expected at least one event");
     assert_eq!(event_contract, client.address);
 }
@@ -3672,6 +3684,7 @@ fn test_create_writes_to_buyer_index() {
     let due_date = env.ledger().timestamp() + DEFAULT_DUE_OFFSET;
 
     let invoice_id = client.create(&issuer, &buyer, &face_value, &due_date, &usdc);
+    let events_after_create = env.events().all();
 
     // Direct storage read: buyer index count and entry
     env.as_contract(&client.address, || {
@@ -3701,7 +3714,9 @@ fn test_create_writes_to_buyer_index() {
     assert_eq!(empty.len(), 0);
 
     // Verify the invoice_created event was emitted by the invoice contract
-    let events = env.events().all();
+    // (captured right after the create call — sdk >=22 buffers are
+    // per-invocation).
+    let events = events_after_create;
     let (event_contract, _topics, _data) = events.last().expect("expected at least one event");
     assert_eq!(event_contract, client.address);
 }
@@ -4189,10 +4204,11 @@ fn test_remove_supported_asset() {
 
     assert!(client.is_supported_asset(&usdc));
     client.remove_supported_asset(&usdc);
+    let events_after_call = env.events().all();
     assert!(!client.is_supported_asset(&usdc));
     assert_eq!(client.get_supported_asset_count(), 0);
 
-    let events = env.events().all();
+    let events = events_after_call;
     let (event_contract, topics, data) = events.last().expect("expected at least one event");
     assert_eq!(event_contract, client.address);
     assert_eq!(
@@ -4208,9 +4224,10 @@ fn test_set_escrow_contract_emits_initial_assignment_event() {
     let escrow = Address::generate(&env);
 
     client.set_escrow_contract(&escrow);
+    let events_after_call = env.events().all();
     assert_eq!(client.get_escrow_contract(), Some(escrow.clone()));
 
-    let events = env.events().all();
+    let events = events_after_call;
     let (event_contract, topics, data) = events.last().expect("expected at least one event");
     assert_eq!(event_contract, client.address);
     assert_eq!(
@@ -4233,12 +4250,13 @@ fn test_set_escrow_contract_emits_replacement_event() {
     client.set_escrow_contract(&initial_escrow);
 
     client.set_escrow_contract(&replacement_escrow);
+    let events_after_call = env.events().all();
     assert_eq!(
         client.get_escrow_contract(),
         Some(replacement_escrow.clone())
     );
 
-    let events = env.events().all();
+    let events = events_after_call;
     let (event_contract, topics, data) = events.last().expect("expected at least one event");
     assert_eq!(event_contract, client.address);
     assert_eq!(
@@ -4317,6 +4335,7 @@ fn test_repay_partial_leaves_status_and_updates_balance() {
     let partial_amount = 400_000_000u128;
     let result = client.repay_partial(&invoice_id, &partial_amount);
     assert!(result);
+    let events_after_repay = env.events().all();
 
     let inv = client.get(&invoice_id);
     assert_eq!(inv.status, InvoiceStatus::Confirmed);
@@ -4329,7 +4348,7 @@ fn test_repay_partial_leaves_status_and_updates_balance() {
     assert_eq!(client.get_repaid_amount(&invoice_id), partial_amount);
 
     let contract_id = client.address.clone();
-    let events = env.events().all();
+    let events = events_after_repay;
     let found = events.iter().any(|e| {
         let (c, topics, _data) = e;
         if c != contract_id {
@@ -5436,29 +5455,34 @@ fn test_get_funding_context_costs_less_than_four_separate_views() {
     client.list_for_financing(&invoice_id, &200);
 
     // Measure the old read pattern: four host calls, four invoice loads.
-    env.cost_estimate().budget().reset_default();
-    let four = (
-        client.get_funding_terms(&invoice_id),
-        client.get_issuer(&invoice_id),
-        client.get_buyer(&invoice_id),
-        client.get_funding_asset(&invoice_id),
-    );
-    let cpu_four = env.cost_estimate().budget().cpu_instruction_cost();
-    let mem_four = env.cost_estimate().budget().memory_bytes_cost();
+    // sdk >=22 test Envs reset the budget at the start of every top-level
+    // invocation, so each call's cost is read right after it and summed
+    // test-side.
+    let terms = client.get_funding_terms(&invoice_id);
+    let mut cpu_four = env.cost_estimate().budget().cpu_instruction_cost();
+    let mut mem_four = env.cost_estimate().budget().memory_bytes_cost();
+    let four_issuer = client.get_issuer(&invoice_id);
+    cpu_four += env.cost_estimate().budget().cpu_instruction_cost();
+    mem_four += env.cost_estimate().budget().memory_bytes_cost();
+    let four_buyer = client.get_buyer(&invoice_id);
+    cpu_four += env.cost_estimate().budget().cpu_instruction_cost();
+    mem_four += env.cost_estimate().budget().memory_bytes_cost();
+    let four_asset = client.get_funding_asset(&invoice_id);
+    cpu_four += env.cost_estimate().budget().cpu_instruction_cost();
+    mem_four += env.cost_estimate().budget().memory_bytes_cost();
 
     // Measure the consolidated read: one host call, one invoice load.
-    env.cost_estimate().budget().reset_default();
     let ctx = client.get_funding_context(&invoice_id);
     let cpu_one = env.cost_estimate().budget().cpu_instruction_cost();
     let mem_one = env.cost_estimate().budget().memory_bytes_cost();
 
     // Parity first (the cheaper path must answer identically)...
-    assert_eq!(ctx.status, four.0 .0);
-    assert_eq!(ctx.face_value, four.0 .1);
-    assert_eq!(ctx.discount_bps, four.0 .2);
-    assert_eq!(ctx.issuer, four.1);
-    assert_eq!(ctx.buyer, four.2);
-    assert_eq!(ctx.funding_asset, four.3);
+    assert_eq!(ctx.status, terms.0);
+    assert_eq!(ctx.face_value, terms.1);
+    assert_eq!(ctx.discount_bps, terms.2);
+    assert_eq!(ctx.issuer, four_issuer);
+    assert_eq!(ctx.buyer, four_buyer);
+    assert_eq!(ctx.funding_asset, four_asset);
 
     // ...then the performance claim. Host budget accounting is deterministic,
     // so 3/4ths of the reads saved must show up as a strict reduction in both
@@ -5599,27 +5623,37 @@ fn test_terminal_invoice_stays_available_when_read_through_indexes() {
     assert_eq!(page.get(0).unwrap().id, invoice_id);
 }
 
+/// Issue #832 documented that the read-time TTL bump only protects entries
+/// that are actually still being queried: once the write-time TTL has fully
+/// elapsed with no `get_by_*` call in between, the index entries expire.
+///
+/// Under soroban-sdk 22 the test Env emulated the network's archived-access
+/// failure (`Storage::InternalError`). Soroban-sdk 23 follows protocol 23,
+/// where transactions automatically restore archived entries before access,
+/// and the test Env now emulates that restoration instead (see the SDK's
+/// `_migrating::v23_archived_testing` notes). Even the TTL introspection
+/// helpers count as accesses, so expiry is no longer observable from the
+/// test Env; what this test pins is the protocol-23 half: a read through
+/// entries whose write-time TTL has fully elapsed succeeds via automatic
+/// restoration instead of hard-failing, and the index page stays intact.
 #[test]
-#[should_panic(expected = "Error(Storage, InternalError)")]
-fn test_get_by_issuer_fails_when_entries_are_never_read() {
+fn test_get_by_issuer_never_read_entries_expire_and_auto_restore() {
     let (env, client, issuer, buyer, _, usdc) = setup();
     let due_date = env.ledger().timestamp() + DEFAULT_DUE_OFFSET;
-    client.create(&issuer, &buyer, &DEFAULT_FACE_VALUE, &due_date, &usdc);
+    let invoice_id = client.create(&issuer, &buyer, &DEFAULT_FACE_VALUE, &due_date, &usdc);
 
-    // Documented archival behaviour (issue #832): the read-time bump only
-    // protects entries that are actually still being queried. Once the
-    // write-time TTL has fully elapsed with no `get_by_*` call in between,
-    // the index entries are archived and any read through them hard-fails
-    // (`Storage::InternalError` in the test env: "Accessed contract data key
-    // that has been archived"; on the real network the transaction fails
-    // before the contract runs). Recovery then requires a `RestoreFootprint`
-    // by a keeper, as documented in DEPLOYMENT.md.
     env.ledger()
         .set_sequence_number(env.ledger().sequence() + TTL_EXTEND_TO - 100_000);
     keep_instance_alive(&env, &client.address);
     env.ledger()
         .set_sequence_number(env.ledger().sequence() + 100_010);
-    client.get_by_issuer(&issuer, &0, &20);
+
+    // Protocol-23 automatic restoration: the read returns the archived entry
+    // instead of hard-failing (on SDK 22's emulated host this panicked with
+    // `Error(Storage, InternalError)`).
+    let page = client.get_by_issuer(&issuer, &0, &20);
+    assert_eq!(page.len(), 1);
+    assert_eq!(page.get(0).unwrap().id, invoice_id);
 }
 
 // ============== ISSUE #830: STATUSCOUNT ENTRIES ARE TTL-EXTENDED ON WRITE ==============
