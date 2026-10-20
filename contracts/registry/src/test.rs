@@ -2203,7 +2203,7 @@ fn batch_entry_plan() -> impl Strategy<Value = BatchEntryPlan> {
 
 /// Asserts that the `batch_registered` event carried by the batch call's own
 /// per-invocation event buffer (captured by the caller and passed in — sdk
-/// >=22 test Envs clear their buffer at every top-level invocation) carries
+/// 22+ test Envs clear their buffer at every top-level invocation) carries
 /// exactly `expected_registered` and `expected_skipped` in its data payload.
 fn assert_batch_event_counts(
     env: &Env,

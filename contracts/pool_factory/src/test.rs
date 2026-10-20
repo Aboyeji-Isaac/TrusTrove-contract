@@ -116,9 +116,7 @@ fn register_asset(te: &TestEnv, asset: &Address) -> Address {
 
 /// Creates an initialized pool outside the factory to model a migrated pool.
 fn new_initialized_pool(te: &TestEnv, asset: &Address) -> Address {
-    let pool_address = te
-        .env
-        .register(trusttrove_pool::PoolContract, ());
+    let pool_address = te.env.register(trusttrove_pool::PoolContract, ());
     let escrow_id = if *asset == te.asset {
         te.escrow_id.clone()
     } else {
@@ -397,9 +395,7 @@ fn test_register_asset_with_uninitialized_invoice_panics() {
     // An invoice contract that was never initialized reports no registry, so
     // the pool cannot be wired and registration is rejected rather than
     // deploying a pool pointed at nothing.
-    let uninitialized_invoice = te
-        .env
-        .register(trusttrove_invoice::InvoiceContract, ());
+    let uninitialized_invoice = te.env.register(trusttrove_invoice::InvoiceContract, ());
 
     te.factory.register_asset(
         &te.asset,

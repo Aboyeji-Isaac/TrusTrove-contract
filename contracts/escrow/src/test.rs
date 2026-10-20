@@ -197,8 +197,11 @@ fn get_balance(env: &Env, token_id: &Address, addr: &Address) -> i128 {
 /// Captured contract events. Since soroban-sdk 22 the test Env resets its
 /// event buffer before every top-level contract invocation, so tests must
 /// capture `env.events().all()` immediately after the call that emits.
-type CapturedEvents =
-    soroban_sdk::Vec<(soroban_sdk::Address, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val)>;
+type CapturedEvents = soroban_sdk::Vec<(
+    soroban_sdk::Address,
+    soroban_sdk::Vec<soroban_sdk::Val>,
+    soroban_sdk::Val,
+)>;
 
 fn assert_last_event_three<T1, T2>(
     env: &Env,

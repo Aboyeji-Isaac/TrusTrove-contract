@@ -2026,7 +2026,7 @@ fn test_receive_repayment() {
     let position_before = te.pool.get_lp_position(&te.lp);
     let result = te.pool.receive_repayment(&invoice_id, &10_000_000_000);
     assert!(result);
-// Capture before further queries: sdk >=22 test Envs reset the event
+    // Capture before further queries: sdk >=22 test Envs reset the event
     // buffer at every top-level invocation.
     let events = te.env.events().all();
 
@@ -2177,7 +2177,7 @@ fn test_receive_repayment_with_refund_happy_path() {
         .pool
         .receive_repayment_with_refund(&invoice_id, &amount, &refund, &te.buyer);
     assert!(result);
-// Capture before further queries: sdk >=22 test Envs reset the event
+    // Capture before further queries: sdk >=22 test Envs reset the event
     // buffer at every top-level invocation.
     let events = te.env.events().all();
 
@@ -2265,7 +2265,7 @@ fn test_receive_repayment_with_refund_zero_refund_matches_receive_repayment() {
         .pool
         .receive_repayment_with_refund(&invoice_id, &amount, &0u128, &te.buyer);
     assert!(result);
-// Capture before further queries: sdk >=22 test Envs reset the event
+    // Capture before further queries: sdk >=22 test Envs reset the event
     // buffer at every top-level invocation.
     let events = te.env.events().all();
 
@@ -2487,7 +2487,7 @@ fn test_handle_default() {
         .set_timestamp(te.env.ledger().timestamp() + 60);
     let result = te.pool.handle_default(&invoice_id);
     assert!(result);
-// Capture before further queries: sdk >=22 test Envs reset the event
+    // Capture before further queries: sdk >=22 test Envs reset the event
     // buffer at every top-level invocation.
     let events = te.env.events().all();
 
@@ -3208,7 +3208,7 @@ fn test_partial_withdraw_succeeds_within_available_liquidity() {
 
     // Partial withdraw of exactly the available amount should succeed
     let returned = te.pool.withdraw(&te.lp, &available_liquidity);
-// Capture before further queries: sdk >=22 test Envs reset the event
+    // Capture before further queries: sdk >=22 test Envs reset the event
     // buffer at every top-level invocation.
     let events = te.env.events().all();
     assert_eq!(returned, available_liquidity);
@@ -3299,7 +3299,7 @@ fn test_withdraw_after_repayment_returns_more_than_deposited() {
     assert_eq!(pos.usdc_value, deposit_amount + expected_yield);
 
     let usdc_returned = te.pool.withdraw(&te.lp, &pos.shares);
-// Capture before further queries: sdk >=22 test Envs reset the event
+    // Capture before further queries: sdk >=22 test Envs reset the event
     // buffer at every top-level invocation.
     let events = te.env.events().all();
 
@@ -6740,7 +6740,7 @@ fn test_pool_transfer_ownership_changes_admin_and_emits_event() {
     let new_admin = Address::generate(&te.env);
 
     te.pool.transfer_ownership(&new_admin);
-// Capture before further queries: sdk >=22 test Envs reset the event
+    // Capture before further queries: sdk >=22 test Envs reset the event
     // buffer at every top-level invocation.
     let events = te.env.events().all();
 
@@ -7341,9 +7341,7 @@ mod counting_invoice {
 #[test]
 fn test_fund_invoice_reads_invoice_once_via_get_funding_context() {
     let te = setup();
-    let mock_id = te
-        .env
-        .register(counting_invoice::MockCountingInvoice, ());
+    let mock_id = te.env.register(counting_invoice::MockCountingInvoice, ());
     counting_invoice::MockCountingInvoiceClient::new(&te.env, &mock_id).configure_counting(
         &te.issuer,
         &te.buyer,
@@ -7659,13 +7657,11 @@ fn check_solvency_invariant(te: &TestEnv, usdc: &MockTokenClient) -> Result<(), 
 /// contract actually booked instead of a re-derivation of its math.
 fn solvency_new_protocol_cuts(
     te: &TestEnv,
-    events: &soroban_sdk::Vec<
-        (
-            soroban_sdk::Address,
-            soroban_sdk::Vec<soroban_sdk::Val>,
-            soroban_sdk::Val,
-        ),
-    >,
+    events: &soroban_sdk::Vec<(
+        soroban_sdk::Address,
+        soroban_sdk::Vec<soroban_sdk::Val>,
+        soroban_sdk::Val,
+    )>,
 ) -> u128 {
     let name = Symbol::new(&te.env, "repayment_received");
     let mut cuts = 0u128;
