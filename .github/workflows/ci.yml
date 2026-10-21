@@ -45,6 +45,12 @@ jobs:
       - name: Test production panic checker
         run: python3 -m unittest discover -s scripts -p 'test_check_production_panic_calls.py'
 
+      - name: Check generated contract API documentation
+        run: python3 scripts/generate_contract_api.py --check
+
+      - name: Test contract API generator
+        run: python3 -m unittest discover -s scripts -p 'test_generate_contract_api.py'
+
       - name: Check formatting
         run: cargo fmt --all --check
 
