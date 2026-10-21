@@ -119,7 +119,8 @@ def generate_section(root=ROOT):
         except OSError as e: raise ValueError(f"cannot read {rel}: {e}") from e
         for sig in parse_contract_signatures(source, rel):
             name = sig.split("(", 1)[0]
-            lines.append(f"| {contract} | {BT}{name}{BT} | {BT}{sig.replace('|', r'\\|')}{BT} |")
+            safe_sig = sig.replace("|", "\\\\|")
+            lines.append(f"| {contract} | {BT}{name}{BT} | {BT}{safe_sig}{BT} |")
             total += 1
     lines += [
         "", f"**Total: {total} public entry points across five deployable contracts.**", "",
