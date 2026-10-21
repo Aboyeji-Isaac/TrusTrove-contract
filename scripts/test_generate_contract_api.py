@@ -8,7 +8,7 @@ class ContractApiGeneratorTests(unittest.TestCase):
 impl Example {
     pub fn nested(
         env: Env,
-        records: Map<String, Vec<(Address, Option<BytesN<32>)>>,
+        records: Map<String, Vec<(Address, Option<BytesN<32>>)>>,
     ) -> Option<Vec<(Address, u128)>> {
         unimplemented!()
     }
@@ -16,7 +16,7 @@ impl Example {
 """
         self.assertEqual(
             parse_contract_signatures(source),
-            ["nested(records: Map<String, Vec<(Address, Option<BytesN<32>)>>) -> Option<Vec<(Address, u128)>>"],
+            ["nested(records: Map<String, Vec<(Address, Option<BytesN<32>>)>>) -> Option<Vec<(Address, u128)>>"],
         )
 
     def test_multiple_contractimpl_blocks_are_collected(self):
