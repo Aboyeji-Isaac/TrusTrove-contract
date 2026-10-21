@@ -993,24 +993,30 @@ fn test_release_to_pool_fails_amount_exceeds_i128_max() {
     client.release_to_pool(&invoice_id, &repayment_amount);
 }
 
+// #1004: a partial repayment must leave the residual principal locked, keep
+// the original `locked_at`, and record exactly one ReleasedToPool history/event
+// entry describing the repaid portion.
 #[test]
-fn test_release_to_pool_partial_repayment_succeeds() {
+fn test_release_to_pool_partial_repayment_retains_residual_lock_state() {
     let (env, client, _admin, pool, issuer, usdc_id) = setup();
     let invoice_id = generate_invoice_id(&env, 1);
     let amount: u128 = 1_000_000_000;
 
     client.lock(&invoice_id, &amount, &issuer);
 
-    // Capture balances before release
+    let locked_at = client.get_locked_at(&invoice_id);
     let pool_balance_before = get_balance(&env, &usdc_id, &pool);
     let escrow_balance_before = get_balance(&env, &usdc_id, &client.address);
 
-    let partial: u128 = 500_000_000;
-    let result = client.release_to_pool(&invoice_id, &partial);
-    assert!(result);
-    assert_eq!(client.get_locked(&invoice_id), 0);
+    let partial: u128 = 400_000_000;
+    assert!(client.release_to_pool(&invoice_id, &partial));
 
-    // Verify pool received exactly `partial`, not the full locked `amount`
+    // The lock survives with only the outstanding principal and its original
+    // timestamp.
+    assert_eq!(client.get_locked(&invoice_id), amount - partial);
+    assert_eq!(client.get_locked_at(&invoice_id), locked_at);
+
+    // Only `partial` left escrow and reached the pool.
     let pool_balance_after = get_balance(&env, &usdc_id, &pool);
     let escrow_balance_after = get_balance(&env, &usdc_id, &client.address);
     assert_eq!(pool_balance_after - pool_balance_before, partial as i128);
@@ -1018,6 +1024,86 @@ fn test_release_to_pool_partial_repayment_succeeds() {
         escrow_balance_before - escrow_balance_after,
         partial as i128
     );
+
+    // History: the original Locked entry plus one ReleasedToPool entry for the
+    // partial amount (not the full lock).
+    let history = client.get_history(&invoice_id);
+    assert_eq!(history.len(), 2);
+    let lock_event = history.get(0).unwrap();
+    assert_eq!(lock_event.action, EscrowAction::Locked);
+    assert_eq!(lock_event.amount, amount);
+    let release_event = history.get(1).unwrap();
+    assert_eq!(release_event.invoice_id, invoice_id);
+    assert_eq!(release_event.action, EscrowAction::ReleasedToPool);
+    assert_eq!(release_event.amount, partial);
+    assert_eq!(release_event.timestamp, env.ledger().timestamp());
+    assert_eq!(release_event.caller, None);
+
+    assert_last_event_three(
+        &env,
+        "released_to_pool",
+        invoice_id.clone(),
+        pool.clone(),
+        partial,
+    );
+
+    // Repaying the residual clears the lock entirely.
+    assert!(client.release_to_pool(&invoice_id, &(amount - partial)));
+    assert_eq!(client.get_locked(&invoice_id), 0);
+    assert_eq!(client.get_locked_at(&invoice_id), 0);
+}
+
+// #1006: `release_to_pool` transfers before mutating custody state, so a
+// rejected token transfer must leave the lock, timestamp, history and events
+// untouched.
+#[test]
+fn test_release_to_pool_rolls_back_when_transfer_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = env.register_contract(None, MockCaller);
+    let pool = env.register_contract(None, poolmock::MockPool);
+    let invoice = env.register_contract(None, MockCaller);
+    poolmock::MockPoolClient::new(&env, &pool).set_invoice_contract(&invoice);
+    let issuer = env.register_contract(None, MockCaller);
+    let token_id = env.register_contract(None, reject::RecipientRejectMockToken);
+    let token = reject::RecipientRejectMockTokenClient::new(&env, &token_id);
+
+    // Fund the pool so the lock can succeed; the rejection is recipient-based.
+    env.as_contract(&token_id, || {
+        env.storage()
+            .persistent()
+            .set(&BalanceKey(pool.clone()), &10_000_000_000_000i128);
+    });
+
+    let contract_id = env.register_contract(None, EscrowContract);
+    let client = EscrowContractClient::new(&env, &contract_id);
+    client.initialize(&admin, &pool, &token_id);
+
+    // Reject the escrow→pool leg of `release_to_pool`.
+    token.set_reject_to(&pool);
+
+    let invoice_id = generate_invoice_id(&env, 40);
+    let amount: u128 = 1_000_000_000;
+    assert!(client.lock(&invoice_id, &amount, &issuer));
+
+    let locked_at = client.get_locked_at(&invoice_id);
+    let history_before = client.get_history(&invoice_id);
+    let events_before = env.events().all().len();
+    let pool_before = token.balance(&pool);
+    let escrow_before = token.balance(&contract_id);
+
+    assert!(client
+        .try_release_to_pool(&invoice_id, &(amount / 2))
+        .is_err());
+
+    // Lock, timestamp, history, balances and events are all unchanged.
+    assert_eq!(client.get_locked(&invoice_id), amount);
+    assert_eq!(client.get_locked_at(&invoice_id), locked_at);
+    assert_eq!(client.get_history(&invoice_id), history_before);
+    assert_eq!(token.balance(&pool), pool_before);
+    assert_eq!(token.balance(&contract_id), escrow_before);
+    assert_eq!(env.events().all().len(), events_before);
 }
 
 #[test]
@@ -1191,6 +1277,48 @@ fn test_handle_default_rejects_before_grace_period() {
     env.ledger().set_timestamp(env.ledger().timestamp() + 59);
 
     client.handle_default(&invoice_id, &pool);
+}
+
+// #934: a record whose `locked_at` is ahead of ledger time (timestamp
+// rollback or malformed record) must be rejected with the typed NotAuthorized
+// error rather than underflowing `now - locked_at`, and the lock must remain
+// untouched.
+#[test]
+fn test_handle_default_rejects_future_locked_at_and_keeps_lock() {
+    let (env, client, _admin, pool, issuer, usdc_id) = setup();
+    let invoice_id = generate_invoice_id(&env, 11);
+    let amount: u128 = 1_000_000_000;
+
+    client.lock(&invoice_id, &amount, &issuer);
+
+    // Seed a future `locked_at`, as if ledger time had rolled back after the
+    // record was written.
+    let future_locked_at = env.ledger().timestamp() + 3_600;
+    env.as_contract(&client.address, || {
+        let key = DataKey::Locked(invoice_id.clone());
+        let mut record: EscrowRecord = env.storage().persistent().get(&key).expect("lock record");
+        record.locked_at = future_locked_at;
+        env.storage().persistent().set(&key, &record);
+    });
+
+    let history_before = client.get_history(&invoice_id);
+    let events_before = env.events().all().len();
+    let pool_before = get_balance(&env, &usdc_id, &pool);
+    let escrow_before = get_balance(&env, &usdc_id, &client.address);
+
+    let err = client
+        .try_handle_default(&invoice_id, &pool)
+        .expect_err("future locked_at must be rejected");
+    assert_eq!(err, Ok(soroban_sdk::Error::from_contract_error(3)));
+
+    // The lock (including its timestamp), history, balances and events are
+    // all unchanged — no funds moved and no default was recorded.
+    assert_eq!(client.get_locked(&invoice_id), amount);
+    assert_eq!(client.get_locked_at(&invoice_id), future_locked_at);
+    assert_eq!(client.get_history(&invoice_id), history_before);
+    assert_eq!(get_balance(&env, &usdc_id, &pool), pool_before);
+    assert_eq!(get_balance(&env, &usdc_id, &client.address), escrow_before);
+    assert_eq!(env.events().all().len(), events_before);
 }
 
 #[test]
