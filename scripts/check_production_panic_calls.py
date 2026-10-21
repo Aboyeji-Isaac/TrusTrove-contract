@@ -146,7 +146,7 @@ def scan_source(source: str, path: str) -> list[Violation]:
     found: list[Violation] = []
     for kind, pattern in PATTERNS:
         for match in pattern.finditer(code):
-            line_number = code.count("\\n", 0, match.start()) + 1
+            line_number = code.count(chr(10), 0, match.start()) + 1
             original = original_lines[line_number - 1] if line_number <= len(original_lines) else ""
             found.append(Violation(path, line_number, kind, original.strip()))
     return sorted(found, key=lambda item: (item.line, item.kind))
