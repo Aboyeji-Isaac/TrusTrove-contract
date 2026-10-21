@@ -53,7 +53,6 @@ def normalize(text):
     text = re.sub(r"<\s*", "<", text)
     text = re.sub(r"\(\s*", "(", text)
     text = re.sub(r"\s*\)", ")", text)
-    text = re.sub(r"\s*:\s*", ": ", text)
     return re.sub(r",\s*", ", ", text)
 
 def parse_contract_signatures(source, source_name="<source>"):
@@ -77,6 +76,7 @@ def parse_contract_signatures(source, source_name="<source>"):
             args = []
             for arg in split_top_level(source[opening + 1:closing]):
                 arg = normalize(arg)
+                arg = re.sub(r"^([A-Za-z_]\\w*)\\s*:\\s*", r"\\1: ", arg)
                 if re.fullmatch(r"_?env:\s*(?:&\s*)?Env", arg): continue
                 if ":" not in arg:
                     raise ValueError(f"{source_name}: unsupported parameter in {match.group(1)}: {arg!r}")
