@@ -143,14 +143,13 @@ def mask_cfg_test_items(code: str) -> str:
 def scan_source(source: str, path: str) -> list[Violation]:
     code = mask_cfg_test_items(mask_non_code(source))
     original_lines = source.splitlines()
-    code_lines = code.splitlines()
     found: list[Violation] = []
-    for line_number, code_line in enumerate(code_lines, 1):
-        original = original_lines[line_number - 1] if line_number <= len(original_lines) else ""
-        for kind, pattern in PATTERNS:
-            if pattern.search(code_line):
-                found.append(Violation(path, line_number, kind, original.strip()))
-    return found
+    for kind, pattern in PATTERNS:
+        for match in pattern.finditer(code):
+            line_number = code.count("\\n", 0, match.start()) + 1
+            original = original_lines[line_number - 1] if line_number <= len(original_lines) else ""
+            found.append(Violation(path, line_number, kind, original.strip()))
+    return sorted(found, key=lambda item: (item.line, item.kind))
 
 
 def load_allowlist(path: Path = ALLOWLIST_PATH) -> list[Allowance]:
