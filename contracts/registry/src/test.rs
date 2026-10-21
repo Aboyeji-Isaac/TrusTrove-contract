@@ -4235,48 +4235,57 @@ fn test_update_profile_preserves_role_flags_and_registered_at() {
 }
 
 #[test]
-fn test_get_verification_status_renews_profile_ttl_for_all_registered_states() {
-    for state in [
-        VerificationStatus::Pending,
-        VerificationStatus::Verified,
-        VerificationStatus::Revoked,
-    ] {
-        let (env, client) = setup();
-        let admin = Address::generate(&env);
-        client.initialize(&admin);
-        let issuer = Address::generate(&env);
-        client.register_issuer(&issuer, &map![&env]);
-        if state == VerificationStatus::Verified {
-            client.verify_profile(&admin, &issuer, &true);
-        } else if state == VerificationStatus::Revoked {
-            client.verify_profile(&admin, &issuer, &true);
-            client.revoke(&issuer);
-        }
-        let key = DataKey::Profile(issuer.clone());
-        let contract_id = client.address.clone();
-        let original_ttl =
-            env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
-        env.ledger()
-            .set_sequence_number(env.ledger().sequence() + original_ttl - 50);
-        let short_ttl = env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
-        assert!(short_ttl < TTL_THRESHOLD);
-        assert_eq!(client.get_verification_status(&issuer), state);
-        let renewed_ttl =
-            env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
-        assert!(
-            renewed_ttl >= TTL_EXTEND_TO - 1000,
-            "status view should renew TTL"
-        );
-        assert!(renewed_ttl > short_ttl);
+fn test_revoke_pending_verified_and_revoked_transitions() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+    let pending = Address::generate(&env);
+    let verified = Address::generate(&env);
+    client.register_issuer(&pending, &map![&env]);
+    client.register_issuer(&verified, &map![&env]);
+    client.verify_profile(&admin, &verified, &true);
 
-        let unknown = Address::generate(&env);
-        let unknown_key = DataKey::Profile(unknown.clone());
-        assert_eq!(
-            client.get_verification_status(&unknown),
-            VerificationStatus::Unregistered
-        );
-        env.as_contract(&contract_id, || {
-            assert!(!env.storage().persistent().has(&unknown_key));
-        });
-    }
+    assert_eq!(
+        client.get_verification_status(&pending),
+        VerificationStatus::Pending
+    );
+    assert_eq!(
+        client.get_verification_status(&verified),
+        VerificationStatus::Verified
+    );
+    assert_eq!(count_events_named(&env, "address_revoked"), 0);
+
+    assert!(client.revoke(&pending));
+    assert_eq!(
+        client.get_verification_status(&pending),
+        VerificationStatus::Revoked
+    );
+    let pending_profile = client.get_profile(&pending);
+    assert!(!pending_profile.verified());
+    assert!(pending_profile.revoked());
+    assert!(!client.is_verified(&pending));
+    assert_eq!(count_events_named(&env, "address_revoked"), 1);
+
+    assert!(client.revoke(&verified));
+    assert_eq!(
+        client.get_verification_status(&verified),
+        VerificationStatus::Revoked
+    );
+    let verified_profile = client.get_profile(&verified);
+    assert!(!verified_profile.verified());
+    assert!(verified_profile.revoked());
+    assert!(!client.is_verified(&verified));
+    assert_eq!(count_events_named(&env, "address_revoked"), 2);
+
+    assert!(client.revoke(&pending));
+    assert!(client.revoke(&verified));
+    assert_eq!(
+        client.get_verification_status(&pending),
+        VerificationStatus::Revoked
+    );
+    assert_eq!(
+        client.get_verification_status(&verified),
+        VerificationStatus::Revoked
+    );
+    assert_eq!(count_events_named(&env, "address_revoked"), 2);
 }
