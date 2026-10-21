@@ -53,10 +53,13 @@ fn f() {
         .expect(
             "required"
         );
+    another.unwrap
+        (
+        );
 }
 """
         found = scan_source(source, "contracts/demo/src/lib.rs")
-        self.assertEqual([item.kind for item in found], ["expect"])
+        self.assertEqual([item.kind for item in found], ["expect", "unwrap"])
 
 
 if __name__ == "__main__":
