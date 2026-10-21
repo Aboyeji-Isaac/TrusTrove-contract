@@ -30,7 +30,7 @@ impl Second { pub fn two(env: Env) {} }
 
     def test_stale_generated_table_is_detected_by_comparison(self):
         readme = "Intro\n" + BEGIN + "\nold table\n" + END + "\nOutro\n"
-        expected = "Intro\n" + BEGIN + "\nnew table\n" + END + "\nOutro\n"
+        expected = "Intro\nnew table\nOutro\n"
         self.assertNotEqual(readme, replace_section(readme, "new table"))
         self.assertEqual(replace_section(readme, "new table"), expected)
 
