@@ -36,4 +36,9 @@ pub enum PoolError {
     /// cap bounds the worst-case cost of a single batch so a caller cannot
     /// exceed the per-transaction budget by batching.
     BatchSizeExceeded = 26,
+    /// `receive_repayment_with_refund` was given a refund destination that
+    /// does not match the buyer recorded on the configured invoice contract
+    /// (`get_buyer`). The refund is invoice-computed data, so its destination
+    /// must be the invoice's canonical buyer (#969).
+    BuyerMismatch = 27,
 }

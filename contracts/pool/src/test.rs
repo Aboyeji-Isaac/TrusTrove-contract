@@ -2498,6 +2498,118 @@ fn test_receive_repayment_with_refund_zero_refund_matches_receive_repayment() {
     );
 }
 
+//  ISSUE #969: REFUND DESTINATION MUST MATCH THE INVOICE BUYER //
+// `receive_repayment_with_refund` is given the refund destination as a plain
+// argument alongside the invoice-computed split. A miswired or compromised
+// caller contract could direct the refund to another address, so the pool
+// reads the canonical buyer back from the configured invoice contract
+// (`get_buyer`) and rejects any mismatch with the typed
+// `PoolError::BuyerMismatch` (#27) before any funds move or any accounting
+// is finalized.
+
+#[test]
+fn test_receive_repayment_with_refund_rejects_foreign_destination_without_mutation() {
+    let te = setup();
+    te.pool.deposit(&te.lp, &100_000_000_000);
+    let invoice_id = create_and_list(&te, &te.usdc_id);
+    te.pool.fund_invoice(&invoice_id);
+
+    let attacker = Address::generate(&te.env);
+    let usdc = MockTokenClient::new(&te.env, &te.usdc_id);
+    let before = te.pool.get_stats();
+    let pool_before = usdc.balance(&te.pool_id);
+    let buyer_before = usdc.balance(&te.buyer);
+    let attacker_before = usdc.balance(&attacker);
+
+    // Valid amounts, in-bounds refund — only the destination is wrong.
+    let amount = DEFAULT_FACE_VALUE;
+    let refund = 120_000_000u128;
+    let result =
+        te.pool
+            .try_receive_repayment_with_refund(&invoice_id, &amount, &refund, &attacker);
+    let error = std::format!("{result:?}");
+    assert!(
+        result.is_err(),
+        "a refund to a foreign destination must be rejected: {error}"
+    );
+    assert!(
+        error.contains("#27"),
+        "expected PoolError::BuyerMismatch: {error}"
+    );
+
+    // No accounting was finalized.
+    let after = te.pool.get_stats();
+    assert_eq!(after.total_deposits, before.total_deposits);
+    assert_eq!(
+        after.total_yield_distributed,
+        before.total_yield_distributed
+    );
+    assert_eq!(after.total_funded, before.total_funded);
+    assert_eq!(after.active_invoice_count, before.active_invoice_count);
+
+    // No funds moved.
+    assert_eq!(
+        usdc.balance(&attacker),
+        attacker_before,
+        "the foreign destination must receive nothing"
+    );
+    assert_eq!(usdc.balance(&te.buyer), buyer_before);
+    assert_eq!(
+        usdc.balance(&te.pool_id),
+        pool_before,
+        "the pool balance must not change on a rejected destination"
+    );
+
+    // The funded invoice entry survives; the invoice may still be settled
+    // later through the canonical path.
+    assert_eq!(
+        te.pool.get_funded_amount(&invoice_id),
+        Some(DEFAULT_FUNDED_AMOUNT)
+    );
+
+    // Positive control: the same split with the canonical buyer settles.
+    assert!(te
+        .pool
+        .receive_repayment_with_refund(&invoice_id, &amount, &refund, &te.buyer));
+    assert_eq!(usdc.balance(&te.buyer), buyer_before + refund as i128);
+    assert_eq!(te.pool.get_funded_amount(&invoice_id), None);
+}
+
+// Even a zero-refund call must verify the destination: the argument is
+// untrusted regardless of whether money would move through it.
+#[test]
+fn test_receive_repayment_with_refund_rejects_foreign_destination_even_with_zero_refund() {
+    let te = setup();
+    te.pool.deposit(&te.lp, &100_000_000_000);
+    let invoice_id = create_and_list(&te, &te.usdc_id);
+    te.pool.fund_invoice(&invoice_id);
+
+    let attacker = Address::generate(&te.env);
+    let before = te.pool.get_stats();
+
+    let result = te.pool.try_receive_repayment_with_refund(
+        &invoice_id,
+        &DEFAULT_FACE_VALUE,
+        &0u128,
+        &attacker,
+    );
+    let error = std::format!("{result:?}");
+    assert!(result.is_err(), "must reject foreign destination: {error}");
+    assert!(
+        error.contains("#27"),
+        "expected PoolError::BuyerMismatch: {error}"
+    );
+
+    let after = te.pool.get_stats();
+    assert_eq!(after.total_deposits, before.total_deposits);
+    assert_eq!(after.total_funded, before.total_funded);
+    assert_eq!(after.active_invoice_count, before.active_invoice_count);
+    assert_eq!(
+        te.pool.get_funded_amount(&invoice_id),
+        Some(DEFAULT_FUNDED_AMOUNT)
+    );
+}
+
 // Mismatched repayment (active_count already zero) must NOT silently underflow the
 // counter to u32::MAX — the contract panics with #17 (ActiveCountUnderflow) instead.
 // Otherwise every subsequent `get_stats()` / utilization read is corrupted.
@@ -7681,6 +7793,16 @@ fn test_fund_invoice_reads_invoice_once_via_get_funding_context() {
 /// `fund_invoice` batches now carry the per-entrypoint instance-TTL bumps
 /// #865 added, so the corrected flow costs cpu = 1,562,040 / mem = 318,929
 /// on this branch; the ceilings below pin that re-measurement.
+///
+/// Re-pinned by #969: `fund_invoice` now also snapshots the canonical buyer
+/// (`DataKey::FundedInvoiceBuyer`, one persistent write + TTL bump) so
+/// `receive_repayment_with_refund` can verify the refund destination without
+/// re-entering the invoice contract mid-settlement. That is ~56k cpu / ~18k
+/// mem of storage work, so the #865 ceilings no longer bound the flow. The
+/// ceilings below pin the #969 re-measurement (cpu = 1,617,956 /
+/// mem = 336,743); the #833 batching guarantee itself is still enforced by
+/// the invoice-call-count assertions in
+/// `test_fund_invoice_uses_single_batched_read` (2 invoice calls, not 5).
 #[test]
 fn test_fund_invoice_host_budget_below_four_call_baseline() {
     let te = setup();
@@ -7694,12 +7816,12 @@ fn test_fund_invoice_host_budget_below_four_call_baseline() {
     std::println!("FUND833_BUDGET cpu={cpu} mem={mem}");
 
     assert!(
-        cpu < 1_570_000,
-        "fund_invoice (batched read + #819 issuer payout) must stay within its re-pinned CPU budget: {cpu}"
+        cpu < 1_625_000,
+        "fund_invoice (batched read + #819 issuer payout + #969 buyer snapshot) must stay within its re-pinned CPU budget: {cpu}"
     );
     assert!(
-        mem < 330_000,
-        "fund_invoice (batched read + #819 issuer payout) must stay within its re-pinned memory budget: {mem}"
+        mem < 345_000,
+        "fund_invoice (batched read + #819 issuer payout + #969 buyer snapshot) must stay within its re-pinned memory budget: {mem}"
     );
 }
 
