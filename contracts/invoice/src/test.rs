@@ -2061,7 +2061,7 @@ fn test_mark_funded_succeeds_for_configured_pool() {
     assert_eq!(inv.funding_pool, Some(pool));
 }
 
-// #554 / #1003: mark_funded panics with the typed InvalidAmount error when
+// #554 / #934: mark_funded panics with the typed InvalidAmount error when
 // funded_amount exceeds face_value.
 #[test]
 #[should_panic(expected = "Error(Contract, #16)")]
@@ -2077,7 +2077,7 @@ fn test_mark_funded_fails_when_amount_exceeds_face_value() {
     client.mark_funded(&invoice_id, &pool, &usdc, &(DEFAULT_FACE_VALUE + 1));
 }
 
-// #1003: a rejected over-funding attempt must not mutate the invoice at all —
+// #934: a rejected over-funding attempt must not mutate the invoice at all —
 // the status stays Listed and funded_amount stays 0, so a later legitimate
 // funding (at or below face_value) is still possible.
 #[test]
