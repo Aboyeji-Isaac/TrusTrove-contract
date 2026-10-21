@@ -39,6 +39,12 @@ jobs:
       - name: Audit dependencies (RUSTSEC)
         run: cargo audit
 
+      - name: Check prohibited production panic calls
+        run: python3 scripts/check_production_panic_calls.py
+
+      - name: Test production panic checker
+        run: python3 -m unittest discover -s scripts -p 'test_check_production_panic_calls.py'
+
       - name: Check formatting
         run: cargo fmt --all --check
 
