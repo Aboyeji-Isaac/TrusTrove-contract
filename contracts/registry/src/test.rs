@@ -171,13 +171,13 @@ fn test_revoke_already_revoked_returns_true_no_reemit() {
     client.register_issuer(&issuer, &map![&env]);
     assert!(!client.is_verified(&issuer));
 
-    // First revoke — should be a no-op (already unverified) and return true.
+    // First revoke transitions Pending to Revoked.
     let result = client.revoke(&issuer);
     assert!(result);
     assert!(!client.is_verified(&issuer));
     assert_eq!(
         client.get_verification_status(&issuer),
-        VerificationStatus::Pending
+        VerificationStatus::Revoked
     );
 
     // Second revoke on already-unverified profile — should succeed
@@ -187,8 +187,9 @@ fn test_revoke_already_revoked_returns_true_no_reemit() {
     assert!(!client.is_verified(&issuer));
     assert_eq!(
         client.get_verification_status(&issuer),
-        VerificationStatus::Pending
+        VerificationStatus::Revoked
     );
+    assert_eq!(count_events_named(&env, "address_revoked"), 1);
 }
 
 #[test]
