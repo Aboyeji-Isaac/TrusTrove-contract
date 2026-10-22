@@ -1004,6 +1004,52 @@ fn test_create_invoice_with_verified_parties() {
     assert!(!invoice.buyer_confirmed);
 }
 
+/// Golden vector for the invoice id (#834).
+///
+/// Rebuilds `create`'s SHA-256 preimage with the byte-at-a-time algorithm
+/// (one `push_back` host call per byte) and asserts the id returned by the
+/// contract is byte-for-byte identical. This protects the bulk-append
+/// rewrite of the preimage builder from silently changing invoice ids.
+#[test]
+fn test_create_invoice_id_matches_pre_refactor_preimage() {
+    let (env, client, issuer, buyer, _, usdc) = setup();
+    let face_value: u128 = DEFAULT_FACE_VALUE;
+    let due_date = env.ledger().timestamp() + DEFAULT_DUE_OFFSET;
+
+    let invoice_id = client.create(&issuer, &buyer, &face_value, &due_date, &usdc);
+
+    // Reference preimage, built the slow way, in the original component
+    // order: issuer_xdr || buyer_xdr || face_value_be || due_date_be ||
+    // counter_be || asset_xdr. `create` hashes the counter value read
+    // *before* the increment, so the first invoice on a fresh contract
+    // hashes 0.
+    let mut reference = soroban_sdk::Bytes::new(&env);
+    for b in issuer.clone().to_xdr(&env).iter() {
+        reference.push_back(b);
+    }
+    for b in buyer.clone().to_xdr(&env).iter() {
+        reference.push_back(b);
+    }
+    for b in face_value.to_be_bytes() {
+        reference.push_back(b);
+    }
+    for b in due_date.to_be_bytes() {
+        reference.push_back(b);
+    }
+    for b in 0u64.to_be_bytes() {
+        reference.push_back(b);
+    }
+    for b in usdc.clone().to_xdr(&env).iter() {
+        reference.push_back(b);
+    }
+    let expected: BytesN<32> = env.crypto().sha256(&reference).into();
+
+    assert_eq!(
+        invoice_id, expected,
+        "invoice id changed across the preimage refactor"
+    );
+}
+
 #[test]
 fn test_cancel_created_invoice() {
     let (env, client, issuer, buyer, _, usdc) = setup();
@@ -4591,6 +4637,93 @@ fn test_mark_funded_fails_zero_amount() {
     client.mark_funded(&invoice_id, &pool, &usdc, &0);
 }
 
+// ============ ISSUE #863: SUPPORTED-ASSET MARKER TTL KEEP-ALIVE ============
+//
+// `add_supported_asset` wrote the persistent `SupportedAsset(Address)`
+// marker with no `extend_ttl`, while the instance-side `SupportedAssetCount`
+// was re-extended by every admin write. The marker could therefore lapse
+// (default persistence bump) long before the count entry, after which
+// `remove_supported_asset`'s `has()` guard early-returns and the count is
+// permanently out of sync with membership. These tests pin the write-time
+// extension, the bump-on-use keep-alive on `is_supported_asset` / `create`,
+// and the resulting count/membership consistency.
+
+#[test]
+fn test_add_supported_asset_extends_marker_ttl_issue_863() {
+    let (env, client, _, _, _, usdc) = setup();
+    let asset_key = crate::DataKey::SupportedAsset(usdc.clone());
+    let ttl = env.as_contract(&client.address, || {
+        env.storage().persistent().get_ttl(&asset_key)
+    });
+    assert!(
+        ttl >= TTL_EXTEND_TO - 100_000,
+        "add_supported_asset must extend the marker to ~TTL_EXTEND_TO, got {ttl}"
+    );
+}
+
+#[test]
+fn test_supported_asset_marker_cannot_lapse_while_in_use() {
+    let (env, client, _, _, _, usdc) = setup();
+    // Three keep-alive cycles of ~TTL_EXTEND_TO ledgers each: total elapsed
+    // (~5.7M) far exceeds the marker's lifetime. Touching the allow-list the
+    // way an active deployment does (idempotent admin re-add, membership
+    // query) must re-bump it every cycle, so membership and the count stay
+    // in lockstep instead of the #863 lapse.
+    for step in 0..3 {
+        env.ledger()
+            .set_sequence_number(env.ledger().sequence() + TTL_EXTEND_TO - 100_000);
+        keep_instance_alive(&env, &client.address);
+        client.add_supported_asset(&usdc);
+        assert!(
+            client.is_supported_asset(&usdc),
+            "supported-asset marker lapsed after keep-alive cycle {step} while the allow-list is in use"
+        );
+    }
+    assert_eq!(
+        client.get_supported_asset_count(),
+        1,
+        "count must not double-count a marker that was never actually removed"
+    );
+    // Removal stays consistent with the live marker (count reaches 0).
+    client.remove_supported_asset(&usdc);
+    assert_eq!(client.get_supported_asset_count(), 0);
+    assert!(!client.is_supported_asset(&usdc));
+}
+
+#[test]
+fn test_is_supported_asset_rebumps_drained_marker() {
+    let (env, client, _, _, _, usdc) = setup();
+    let asset_key = crate::DataKey::SupportedAsset(usdc.clone());
+    // Drain the marker to just above expiry (same measured drain style as
+    // the pool LP tests) so the use-time bump is observable.
+    let marker_ttl = env.as_contract(&client.address, || {
+        env.storage().persistent().get_ttl(&asset_key)
+    });
+    env.ledger()
+        .set_sequence_number(env.ledger().sequence() + marker_ttl - 50);
+    keep_instance_alive(&env, &client.address);
+
+    assert!(client.is_supported_asset(&usdc));
+    let after = env.as_contract(&client.address, || {
+        env.storage().persistent().get_ttl(&asset_key)
+    });
+    assert!(
+        after >= TTL_EXTEND_TO - 100_000,
+        "is_supported_asset must re-bump the drained supported-asset marker, got {after}"
+    );
+    // Membership and the instance-side count are still in lockstep after
+    // the drain-and-rebump cycle: the #863 divergence cannot occur.
+    assert_eq!(client.get_supported_asset_count(), 1);
+    //
+    // `create`'s allow-list check performs the identical `bump_persistent`
+    // on the same key (see `create_inner`); it is not re-measured across a
+    // drained marker here because creating after a ~2M-ledger drain would
+    // dispatch to the mock registry, whose test-only instance the host
+    // archives once its default TTL elapses (it carries no keep-alive of
+    // its own). T2 pins the end-to-end count consistency for the paths the
+    // admin and callers actually exercise.
+}
+
 #[test]
 fn test_set_escrow_contract_admin_can_replace_and_repay_uses_new_address() {
     let (env, client, issuer, buyer, _, usdc) = setup();
@@ -6394,18 +6527,25 @@ fn test_index_helper_cpu_does_not_grow_with_scan_depth() {
     assert!(client.has_status_membership(&InvoiceStatus::Created, &ids.get(N as u32 - 1).unwrap()));
 
     // Literal AC2 pair: last create (all indexes hold 300 invoices) vs the
-    // first create (empty indexes) above. The 25x bound is deliberately
+    // first create (empty indexes) above. The bound is deliberately
     // generous: measurements on this repo's test host show per-call CPU
     // itself grows ~23x with the *number of stored keys* at N=300 even when
     // every helper is O(1) (probed during this fix), so the load-bearing
     // assertion is the scan-depth gate above. Before the fix the extra
     // full-index scans pushed this ratio to ~27x, failing the bound; with
     // the marker rewrite it lands back at the host floor.
+    //
+    // Recalibrated from 25x to 40x for #834: the preimage refactor cut the
+    // *first* create's own cost ~39% (907,222 -> 557,318 CPU on this host),
+    // so the same host-key-count floor now expresses as a larger ratio
+    // (~35x measured). The growth signal is unchanged — a re-introduced
+    // full-index scan would push the ratio back past this bound, and the
+    // scan-depth gate above is the load-bearing O(1) assertion regardless.
     env.cost_estimate().budget().reset_unlimited();
     client.create(&issuer, &buyer, &DEFAULT_FACE_VALUE, &due_date, &usdc);
     let cpu_last_create = env.cost_estimate().budget().cpu_instruction_cost();
     assert!(
-        cpu_last_create <= cpu_first_create * 25,
+        cpu_last_create <= cpu_first_create * 40,
         "create cost must stay at the test-host floor: first {cpu_first_create}, last {cpu_last_create} ({}x)",
         cpu_last_create / cpu_first_create.max(1)
     );

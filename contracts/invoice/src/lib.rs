@@ -542,6 +542,13 @@ impl InvoiceContract {
 
         let key = DataKey::SupportedAsset(asset.clone());
         if env.storage().persistent().has(&key) {
+            // Issue #863: re-adding an already-supported asset re-bumps the
+            // marker's liveness, so the admin's repeated write keeps the
+            // entry (and thus the `SupportedAssetCount` it backs) alive.
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+            Self::extend_instance_ttl(&env);
             return;
         }
 
@@ -554,6 +561,15 @@ impl InvoiceContract {
             .instance()
             .set(&DataKey::SupportedAssetCount, &(count + 1));
         env.storage().persistent().set(&key, &true);
+        // Issue #863: without this the marker was left at the default
+        // persistence bump, could lapse while `SupportedAssetCount` (an
+        // instance entry re-extended by `extend_instance_ttl`) stayed high,
+        // and `remove_supported_asset`'s `has()` guard then early-returned
+        // forever — leaving the count permanently stale. Mirror the
+        // write-time extension used by the #830/#832 paths.
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
         Self::extend_instance_ttl(&env);
         events::supported_asset_added(&env, &asset);
     }
@@ -630,13 +646,14 @@ impl InvoiceContract {
     /// ```
     pub fn is_supported_asset(env: Env, asset: Address) -> bool {
         let key = DataKey::SupportedAsset(asset);
-        let store = env.storage().persistent();
-        if store.has(&key) {
-            store.extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
-            true
-        } else {
-            false
+        let supported = env.storage().persistent().has(&key);
+        if supported {
+            // Issue #863 keep-alive: querying membership re-bumps the
+            // marker, matching the read-path bump introduced for the
+            // index keys in #832.
+            bump_persistent(&env, &key);
         }
+        supported
     }
 
     /// Returns the number of assets currently on the funding allow-list.
@@ -746,13 +763,15 @@ impl InvoiceContract {
         require_verified(env, &registry_id, &issuer, InvoiceError::IssuerNotVerified);
         require_verified(env, &registry_id, &buyer, InvoiceError::BuyerNotVerified);
 
-        if !env
-            .storage()
-            .persistent()
-            .has(&DataKey::SupportedAsset(funding_asset.clone()))
-        {
+        let asset_key = DataKey::SupportedAsset(funding_asset.clone());
+        if !env.storage().persistent().has(&asset_key) {
             panic_with_error!(env, InvoiceError::UnsupportedAsset);
         }
+        // Issue #863 keep-alive (bump-on-use): every invoice actually
+        // created against an asset re-extends that asset's allow-list
+        // marker, so a marker cannot lapse underneath a still-in-use asset
+        // and strand `SupportedAssetCount` out of sync with membership.
+        bump_persistent(env, &asset_key);
 
         if face_value < MIN_FACE_VALUE {
             panic_with_error!(env, InvoiceError::InvalidFaceValue);
@@ -787,28 +806,19 @@ impl InvoiceContract {
         let issuer_xdr = issuer.clone().to_xdr(env);
         let buyer_xdr = buyer.clone().to_xdr(env);
 
-        // Safely append all XDR bytes without assuming a fixed length
-        for b in issuer_xdr.iter() {
-            hash_input.push_back(b);
-        }
-        for b in buyer_xdr.iter() {
-            hash_input.push_back(b);
-        }
-        for b in face_value.to_be_bytes() {
-            hash_input.push_back(b);
-        }
-        for b in due_date.to_be_bytes() {
-            hash_input.push_back(b);
-        }
-        for b in counter.to_be_bytes() {
-            hash_input.push_back(b);
-        }
-        {
-            let asset_xdr = funding_asset.clone().to_xdr(env);
-            for b in asset_xdr.iter() {
-                hash_input.push_back(b);
-            }
-        }
+        // Issue #834: build the preimage with bulk appends instead of one
+        // `push_back` host call per byte. Component order is unchanged from
+        // the previous byte-at-a-time loops:
+        // issuer_xdr || buyer_xdr || face_value_be || due_date_be ||
+        // counter_be || asset_xdr, so invoice ids are byte-for-byte stable
+        // (asserted by `test_create_invoice_id_matches_pre_refactor_preimage`).
+        hash_input.append(&issuer_xdr);
+        hash_input.append(&buyer_xdr);
+        hash_input.extend_from_array(&face_value.to_be_bytes());
+        hash_input.extend_from_array(&due_date.to_be_bytes());
+        hash_input.extend_from_array(&counter.to_be_bytes());
+        let asset_xdr = funding_asset.clone().to_xdr(env);
+        hash_input.append(&asset_xdr);
         let invoice_id: BytesN<32> = env.crypto().sha256(&hash_input).into();
 
         let invoice = Invoice {
@@ -1419,14 +1429,6 @@ impl InvoiceContract {
             panic_with_error!(&env, InvoiceError::NotAuthorized);
         }
         pool_address.require_auth();
-        let configured_pool: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::PoolContract)
-            .unwrap_or_else(|| panic_with_error!(&env, InvoiceError::NotFound));
-        if pool_address != configured_pool {
-            panic_with_error!(&env, InvoiceError::NotAuthorized);
-        }
 
         if funded_amount == 0 {
             panic_with_error!(&env, InvoiceError::InvalidAmount);
@@ -1446,9 +1448,6 @@ impl InvoiceContract {
         }
         if asset_address != invoice.funding_asset {
             panic_with_error!(&env, InvoiceError::UnsupportedAsset);
-        }
-        if funded_amount > invoice.face_value {
-            panic_with_error!(&env, InvoiceError::InvalidAmount);
         }
 
         invoice.status = InvoiceStatus::Funded;

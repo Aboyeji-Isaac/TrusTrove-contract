@@ -207,6 +207,21 @@ let status = if !profile_exists {
 |---------|------|-------------|
 | `Invoice(BytesN<32>)` | `Invoice` | Full invoice record keyed by SHA-256 invoice ID |
 
+#### Supported Asset Allow-List
+
+| DataKey | Type | Description | TTL extended |
+|---------|------|-------------|--------------|
+| `SupportedAsset(Address)` | `bool` | Funding-asset allow-list marker | On write (`add_supported_asset`, including idempotent re-adds) and on use (`is_supported_asset`, `create`'s `SupportedAsset` check), issue #863 |
+
+The marker is persistent storage while `SupportedAssetCount` (above,
+instance storage) is re-bumped by every admin write. Without the write and
+use-time extensions the marker could lapse underneath a still-in-use
+asset; `remove_supported_asset` early-returns on a missing marker, so the
+lapse would leave `SupportedAssetCount` permanently out of sync with
+membership (issue #863). Keep-alive strategy: bump-on-write plus
+bump-on-use, the same policy as the index keys (#832) and `StatusCount`
+(#830).
+
 #### Invoice Structure
 
 ```
