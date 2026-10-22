@@ -762,16 +762,16 @@ fn test_attestation_signed_for_one_deployment_rejected_by_another() {
     let usdc = env.register(MockToken, ());
 
     // Deployment A.
-    let a_id = env.register(InvoiceContract, ());
+    let a_admin = Address::generate(&env);
+    let a_id = env.register(InvoiceContract, (a_admin, registry_id.clone()));
     let a = InvoiceContractClient::new(&env, &a_id);
-    a.initialize(&Address::generate(&env), &registry_id);
     a.add_supported_asset(&usdc);
     let agent_registry = register_test_agent(&env, &a);
 
     // Deployment B: same network, same agent registry, same parties.
-    let b_id = env.register(InvoiceContract, ());
+    let b_admin = Address::generate(&env);
+    let b_id = env.register(InvoiceContract, (b_admin, registry_id.clone()));
     let b = InvoiceContractClient::new(&env, &b_id);
-    b.initialize(&Address::generate(&env), &registry_id);
     b.add_supported_asset(&usdc);
     b.set_agent_registry_contract(&agent_registry);
 
