@@ -592,10 +592,10 @@ fn test_lock_rolls_back_when_pool_transfer_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let admin = env.register_contract(None, MockCaller);
-    let pool = env.register_contract(None, MockCaller);
-    let issuer = env.register_contract(None, MockCaller);
-    let token_id = env.register_contract(None, reject::RecipientRejectMockToken);
+    let admin = env.register(MockCaller, ());
+    let pool = env.register(MockCaller, ());
+    let issuer = env.register(MockCaller, ());
+    let token_id = env.register(reject::RecipientRejectMockToken, ());
     let token = reject::RecipientRejectMockTokenClient::new(&env, &token_id);
 
     // Fund the pool so the call is realistic; the rejection is recipient-based.
@@ -605,7 +605,7 @@ fn test_lock_rolls_back_when_pool_transfer_fails() {
             .set(&BalanceKey(pool.clone()), &10_000_000_000_000i128);
     });
 
-    let contract_id = env.register_contract(None, EscrowContract);
+    let contract_id = env.register(EscrowContract, ());
     let client = EscrowContractClient::new(&env, &contract_id);
     client.initialize(&admin, &pool, &token_id);
 
@@ -690,10 +690,10 @@ fn test_release_to_issuer_rolls_back_when_transfer_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let admin = env.register_contract(None, MockCaller);
-    let pool = env.register_contract(None, MockCaller);
-    let issuer = env.register_contract(None, MockCaller);
-    let token_id = env.register_contract(None, reject::RecipientRejectMockToken);
+    let admin = env.register(MockCaller, ());
+    let pool = env.register(MockCaller, ());
+    let issuer = env.register(MockCaller, ());
+    let token_id = env.register(reject::RecipientRejectMockToken, ());
     let token = reject::RecipientRejectMockTokenClient::new(&env, &token_id);
 
     env.as_contract(&token_id, || {
@@ -702,7 +702,7 @@ fn test_release_to_issuer_rolls_back_when_transfer_fails() {
             .set(&BalanceKey(pool.clone()), &10_000_000_000_000i128);
     });
 
-    let contract_id = env.register_contract(None, EscrowContract);
+    let contract_id = env.register(EscrowContract, ());
     let client = EscrowContractClient::new(&env, &contract_id);
     client.initialize(&admin, &pool, &token_id);
 
@@ -809,11 +809,11 @@ fn test_release_to_issuer_rejects_stored_amount_above_i128_max() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let admin = env.register_contract(None, MockCaller);
-    let pool = env.register_contract(None, MockCaller);
-    let issuer = env.register_contract(None, MockCaller);
-    let usdc_id = env.register_contract(None, MockToken);
-    let contract_id = env.register_contract(None, EscrowContract);
+    let admin = env.register(MockCaller, ());
+    let pool = env.register(MockCaller, ());
+    let issuer = env.register(MockCaller, ());
+    let usdc_id = env.register(MockToken, ());
+    let contract_id = env.register(EscrowContract, ());
     let client = EscrowContractClient::new(&env, &contract_id);
     client.initialize(&admin, &pool, &usdc_id);
 
@@ -856,11 +856,11 @@ fn test_release_to_issuer_corrupted_amount_panics_with_invalid_amount() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let admin = env.register_contract(None, MockCaller);
-    let pool = env.register_contract(None, MockCaller);
-    let issuer = env.register_contract(None, MockCaller);
-    let usdc_id = env.register_contract(None, MockToken);
-    let contract_id = env.register_contract(None, EscrowContract);
+    let admin = env.register(MockCaller, ());
+    let pool = env.register(MockCaller, ());
+    let issuer = env.register(MockCaller, ());
+    let usdc_id = env.register(MockToken, ());
+    let contract_id = env.register(EscrowContract, ());
     let client = EscrowContractClient::new(&env, &contract_id);
     client.initialize(&admin, &pool, &usdc_id);
 
@@ -1071,7 +1071,7 @@ fn test_release_to_pool_rejects_drifted_pin() {
     // The admin pinned a reference that does NOT match the pool's configured
     // invoice contract: settlement must be rejected with InvalidConfig (#8)
     // even though the pool-resolved caller authorizes the call.
-    let other_invoice = env.register_contract(None, MockCaller);
+    let other_invoice = env.register(MockCaller, ());
     client.set_invoice_contract(&other_invoice);
 
     client.lock(&invoice_id, &amount, &issuer);
@@ -1090,7 +1090,7 @@ fn test_release_to_pool_rejects_pool_rotation_after_pin() {
     // until the escrow admin repins the reference.
     let invoice = client.get_invoice_contract();
     client.set_invoice_contract(&invoice);
-    let rotated = env.register_contract(None, MockCaller);
+    let rotated = env.register(MockCaller, ());
     poolmock::MockPoolClient::new(&env, &pool).set_invoice_contract(&rotated);
 
     client.lock(&invoice_id, &amount, &issuer);
@@ -1141,6 +1141,7 @@ fn test_release_to_pool_partial_repayment_retains_residual_lock_state() {
 
     let partial: u128 = 400_000_000;
     assert!(client.release_to_pool(&invoice_id, &partial));
+    let events_after_release = env.events().all();
 
     // The lock survives with only the outstanding principal and its original
     // timestamp.
@@ -1172,6 +1173,7 @@ fn test_release_to_pool_partial_repayment_retains_residual_lock_state() {
 
     assert_last_event_three(
         &env,
+        &events_after_release,
         "released_to_pool",
         invoice_id.clone(),
         pool.clone(),
@@ -1864,7 +1866,7 @@ fn prop_escrow_balance_equals_sum_of_locked_records() {
             let (env, client, _admin, pool, issuer, usdc_id) = setup();
             // Coverage instrumentation increases host CPU cost for long property sequences.
             // Keep all generated operations and invariants, without the default test budget.
-            env.budget().reset_unlimited();
+            env.cost_estimate().budget().reset_unlimited();
             let invoice_ids = [
                 generate_invoice_id(&env, 200),
                 generate_invoice_id(&env, 201),

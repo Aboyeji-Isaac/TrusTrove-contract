@@ -174,6 +174,7 @@ fn test_revoke_already_revoked_returns_true_no_reemit() {
 
     // First revoke transitions Pending to Revoked.
     let result = client.revoke(&issuer);
+    let events_first_revoke = env.events().all();
     assert!(result);
     assert!(!client.is_verified(&issuer));
     assert_eq!(
@@ -184,13 +185,23 @@ fn test_revoke_already_revoked_returns_true_no_reemit() {
     // Second revoke on already-unverified profile — should succeed
     // without panic and without altering state.
     let result2 = client.revoke(&issuer);
+    let events_second_revoke = env.events().all();
     assert!(result2);
     assert!(!client.is_verified(&issuer));
     assert_eq!(
         client.get_verification_status(&issuer),
         VerificationStatus::Revoked
     );
-    assert_eq!(count_events_named(&env, "address_revoked"), 1);
+    // soroban-sdk 22+ exposes only the last invocation's events, so the
+    // transition and the no-op are each counted from their own capture.
+    assert_eq!(
+        count_named_in(&env, &events_first_revoke, "address_revoked"),
+        1
+    );
+    assert_eq!(
+        count_named_in(&env, &events_second_revoke, "address_revoked"),
+        0
+    );
 }
 
 #[test]
@@ -408,17 +419,19 @@ fn assert_profiles_equivalent(before: &Profile, after: &Profile) {
     assert_eq!(after.metadata, before.metadata);
 }
 
+/// Events captured from a single top-level invocation.
+type CapturedEvents = Vec<(Address, Vec<Val>, Val)>;
+
 /// Counts the events whose first topic symbol is `name`.
 ///
 /// Used to assert how many times a specific event was published, which the
 /// "no event" and "exactly one event" assertions below need. The topic is
 /// decoded back into a `Symbol` because `Val` itself is not comparable.
-fn count_events_named(env: &Env, name: &str) -> u32 {
+fn count_named_in(env: &Env, events: &CapturedEvents, name: &str) -> u32 {
     let expected = Symbol::new(env, name);
-    let all_events = env.events().all();
     let mut count = 0u32;
-    for i in 0..all_events.len() {
-        let event = all_events.get(i).expect("event index in range");
+    for i in 0..events.len() {
+        let event = events.get(i).expect("event index in range");
         let topics: Vec<Val> = match event.1.clone().try_into_val(env) {
             Ok(t) => t,
             Err(_) => continue,
@@ -435,6 +448,14 @@ fn count_events_named(env: &Env, name: &str) -> u32 {
         }
     }
     count
+}
+
+/// `count_named_in` over whatever the Env currently exposes: the events of the
+/// last top-level invocation only. Since soroban-sdk 22 the buffer is reset
+/// before every call, so a test that spans several calls has to capture with
+/// `env.events().all()` right after the call it is measuring.
+fn count_events_named(env: &Env, name: &str) -> u32 {
+    count_named_in(env, &env.events().all(), name)
 }
 
 /// A `reinstate` call against a `Pending` profile is rejected as a state
@@ -4394,7 +4415,13 @@ fn test_revoke_pending_verified_and_revoked_transitions() {
     );
     assert_eq!(count_events_named(&env, "address_revoked"), 0);
 
+    // soroban-sdk 22+ resets the event buffer before every top-level invocation,
+    // so the running total is accumulated from a count taken right after each
+    // revoke instead of read off a cumulative buffer.
+    let mut revoked_events = 0u32;
+
     assert!(client.revoke(&pending));
+    revoked_events += count_events_named(&env, "address_revoked");
     assert_eq!(
         client.get_verification_status(&pending),
         VerificationStatus::Revoked
@@ -4403,9 +4430,10 @@ fn test_revoke_pending_verified_and_revoked_transitions() {
     assert!(!pending_profile.verified());
     assert!(pending_profile.revoked());
     assert!(!client.is_verified(&pending));
-    assert_eq!(count_events_named(&env, "address_revoked"), 1);
+    assert_eq!(revoked_events, 1);
 
     assert!(client.revoke(&verified));
+    revoked_events += count_events_named(&env, "address_revoked");
     assert_eq!(
         client.get_verification_status(&verified),
         VerificationStatus::Revoked
@@ -4414,10 +4442,12 @@ fn test_revoke_pending_verified_and_revoked_transitions() {
     assert!(!verified_profile.verified());
     assert!(verified_profile.revoked());
     assert!(!client.is_verified(&verified));
-    assert_eq!(count_events_named(&env, "address_revoked"), 2);
+    assert_eq!(revoked_events, 2);
 
     assert!(client.revoke(&pending));
+    revoked_events += count_events_named(&env, "address_revoked");
     assert!(client.revoke(&verified));
+    revoked_events += count_events_named(&env, "address_revoked");
     assert_eq!(
         client.get_verification_status(&pending),
         VerificationStatus::Revoked
@@ -4426,5 +4456,5 @@ fn test_revoke_pending_verified_and_revoked_transitions() {
         client.get_verification_status(&verified),
         VerificationStatus::Revoked
     );
-    assert_eq!(count_events_named(&env, "address_revoked"), 2);
+    assert_eq!(revoked_events, 2);
 }

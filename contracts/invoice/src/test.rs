@@ -2097,17 +2097,18 @@ fn test_mark_funded_overfunding_leaves_invoice_unchanged() {
     let pool = mock_pool_with_asset(&env, &usdc);
     client.set_pool_contract(&pool);
 
-    let events_before = env.events().all().len();
     assert!(client
         .try_mark_funded(&invoice_id, &pool, &usdc, &(DEFAULT_FACE_VALUE + 1))
         .is_err());
+    // soroban-sdk 22+ resets the event buffer before every top-level invocation,
+    // so the rejected call is measured on its own: it must emit nothing.
+    assert_eq!(env.events().all().len(), 0);
 
     let inv = client.get(&invoice_id);
     assert_eq!(inv.status, InvoiceStatus::Listed);
     assert_eq!(inv.funded_amount, 0);
     assert_eq!(inv.funding_pool, None);
     assert_eq!(inv.funded_at, None);
-    assert_eq!(env.events().all().len(), events_before);
 
     // The invoice is still fundable at its face value after the rejection.
     assert!(client.mark_funded(&invoice_id, &pool, &usdc, &DEFAULT_FACE_VALUE));
@@ -2326,13 +2327,13 @@ fn test_set_pool_contract_replacement_emits_old_and_new_addresses() {
     let new_pool = Address::generate(&env);
 
     client.set_pool_contract(&old_pool);
-    let events_before_replacement = env.events().all().len();
-
     client.set_pool_contract(&new_pool);
 
-    assert_eq!(client.get_pool_contract(), Some(new_pool.clone()));
+    // soroban-sdk 22+ resets the event buffer before every top-level invocation,
+    // so the replacement event is captured before any further call is made.
     let events = env.events().all();
-    assert_eq!(events.len(), events_before_replacement + 1);
+    assert_eq!(events.len(), 1);
+    assert_eq!(client.get_pool_contract(), Some(new_pool.clone()));
     let (event_contract, topics, data) = events.last().expect("expected replacement event");
     assert_eq!(event_contract, client.address.clone());
     assert_eq!(

@@ -556,9 +556,7 @@ fn test_fund_invoice_escrow_lock_failure_preserves_state() {
     te.pool.deposit(&te.lp, &100_000_000_000);
     let invoice_id = create_and_list(&te, &te.usdc_id);
 
-    let failing_escrow_id = te
-        .env
-        .register_contract(None, failing_escrow::MockFailingEscrow);
+    let failing_escrow_id = te.env.register(failing_escrow::MockFailingEscrow, ());
     te.env.as_contract(&te.pool_id, || {
         te.env
             .storage()
@@ -1765,7 +1763,7 @@ fn test_get_usdc_asset_panics_when_uninitialized() {
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_get_funding_asset_panics_when_uninitialized() {
     let env = Env::default();
-    let pool_id = env.register_contract(None, PoolContract);
+    let pool_id = env.register(PoolContract, ());
     let pool = PoolContractClient::new(&env, &pool_id);
     pool.get_funding_asset();
 }
@@ -2651,9 +2649,7 @@ fn test_receive_repayment_with_refund_rolls_back_when_refund_transfer_fails() {
     // Swap the pool's funding asset for the failing token stub. Funding
     // already happened against the real USDC mock, so only the refund
     // transfer is affected.
-    let failing_token_id = te
-        .env
-        .register_contract(None, failing_token::MockFailingToken);
+    let failing_token_id = te.env.register(failing_token::MockFailingToken, ());
     let failing_usdc = failing_token::MockFailingTokenClient::new(&te.env, &failing_token_id);
     te.env.as_contract(&failing_token_id, || {
         te.env
@@ -3222,7 +3218,7 @@ fn test_handle_default_rolls_back_on_escrow_failure() {
     // Swap in a failing escrow that panics on handle_default
     let failing_escrow_id = te
         .env
-        .register_contract(None, failing_escrow_default::MockFailingEscrowDefault);
+        .register(failing_escrow_default::MockFailingEscrowDefault, ());
     te.env.as_contract(&te.pool_id, || {
         te.env
             .storage()
@@ -8245,7 +8241,7 @@ fn prop_pool_token_balance_always_covers_available_liquidity() {
                 let te = setup();
                 // Tarpaulin instrumentation can exhaust the default Soroban host budget.
                 // Preserve the full property sequence and its solvency assertions.
-                te.env.budget().reset_unlimited();
+                te.env.cost_estimate().budget().reset_unlimited();
                 let usdc = MockTokenClient::new(&te.env, &te.usdc_id);
 
                 // One random fee configuration per sequence (the issue's
@@ -8469,9 +8465,7 @@ mod failing_invoice {
 #[test]
 fn test_fund_invoice_view_failure_preserves_accounting() {
     let te = setup();
-    let mock_id = te
-        .env
-        .register_contract(None, failing_invoice::MockFailingInvoice);
+    let mock_id = te.env.register(failing_invoice::MockFailingInvoice, ());
     let mock = failing_invoice::MockFailingInvoiceClient::new(&te.env, &mock_id);
     mock.configure(
         &te.issuer,
