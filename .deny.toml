@@ -3,7 +3,6 @@
 # - Deny advisories by default unless explicitly allowed
 # - Allow listed advisories below with explanation
 # - CI will fail on any new advisory not explicitly ignored
-
 ignore = [
   # RUSTSEC-2026-0009: time crate DoS vulnerability
   # Originates from soroban-sdk 21.7.7 -> stellar-xdr -> time 0.3.36
@@ -13,7 +12,7 @@ ignore = [
 ]
 
 # License policy: enforce compatible licenses for all dependencies
-[[license]]
+[license]
 # Allow these license identifiers (SPDX)
 allow = [
   "MIT",
@@ -29,18 +28,18 @@ deny = [
 ]
 
 # Duplicate version policy: prevent multiple versions of the same crate
-[[duplicate_version]]
+[duplicate_version]
 # Policy: deny duplicate versions by default
 # This ensures reproducible builds and avoids confusion
 deny = true
 
 # Source policy: require all dependencies to have a source URL
-[[source]]
+[source]
 # Require crates to have a source repository
 require_source = true
 
 # Verify that all sources are from trusted registries
-# ( Cargo defaults to crates.io; internal workspace paths are excluded )
+# (Cargo defaults to crates.io; internal workspace paths are excluded)
 trusted_registries = [
   "https://registry.npmjs.org/",
   "https://pypi.org/simple/",
