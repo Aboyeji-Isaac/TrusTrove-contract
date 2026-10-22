@@ -53,6 +53,11 @@ jobs:
       - name: Audit dependencies (RUSTSEC)
         run: cargo audit
 
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny@0.22.0
+
       - name: Check cargo-deny advisories and licenses
         run: cargo deny check
 
