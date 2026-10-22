@@ -1675,6 +1675,10 @@ impl PoolContract {
     ///   for principal already paid to the issuer.
     /// * `ActiveCountUnderflow` if the active-invoice counter would underflow
     ///   (e.g. double-default of the same invoice).
+    /// * `InvoiceDefaultNotRecorded` if `invoice.mark_defaulted()` reports that
+    ///   the `Defaulted` status was not persisted. No pool accounting is
+    ///   written in that case, so the pool never books a loss for an invoice
+    ///   that is still active (#971).
     ///
     /// # Returns
     /// * `bool` - `true` when default handling completes.
@@ -1743,9 +1747,54 @@ impl PoolContract {
         let total_funded = totals.funded;
         let total_loss_realised = totals.loss_realised;
 
+        // Validate every pool-side arithmetic bound before anything is written
+        // and before the invoice is mutated: the funded principal must fit
+        // back under `TotalFunded`, the active counter must be positive, and —
+        // when the principal is unrecoverable — `TotalDeposits` must be able
+        // to absorb the loss. Running these checks first keeps their error
+        // precedence: a mismatched default still surfaces
+        // ActiveCountUnderflow (#17) rather than an invoice lookup error from
+        // mark_defaulted.
         let new_total_funded = total_funded
             .checked_sub(funded_amount)
             .unwrap_or_else(|| panic_with_error!(&env, PoolError::Overflow));
+        let new_total_deposits = if principal_paid_to_issuer {
+            Some(
+                totals
+                    .deposits
+                    .checked_sub(funded_amount)
+                    .unwrap_or_else(|| panic_with_error!(&env, PoolError::Overflow)),
+            )
+        } else {
+            None
+        };
+        let active_count = totals.active_invoices;
+        let new_active_count = active_count
+            .checked_sub(1)
+            .unwrap_or_else(|| panic_with_error!(&env, PoolError::ActiveCountUnderflow));
+
+        // Persist the Defaulted status on the invoice contract (step 2 of the
+        // documented cross-contract sequence) BEFORE any pool accounting is
+        // written (#971). Bookkeeping that reports a realised loss must never
+        // exist while the invoice itself is still active, so the pool asks the
+        // invoice to commit first and only writes its own totals once that
+        // succeeded. A `false` return means the status was not persisted and
+        // the default is rejected fail-closed with
+        // `InvoiceDefaultNotRecorded`. mark_defaulted is idempotent: when
+        // invoice.trigger_default already transitioned the status to Defaulted
+        // before invoking this pool entry point, the call returns `true`
+        // without changing anything.
+        let mut args = Vec::new(&env);
+        args.push_back(invoice_id.clone().into_val(&env));
+        let marked_defaulted: bool = env.invoke_contract(
+            &invoice_contract,
+            &Symbol::new(&env, "mark_defaulted"),
+            args,
+        );
+        if !marked_defaulted {
+            panic_with_error!(&env, PoolError::InvoiceDefaultNotRecorded);
+        }
+
         env.storage()
             .instance()
             .set(&DataKey::TotalFunded, &new_total_funded);
@@ -1753,38 +1802,14 @@ impl PoolContract {
             &DataKey::TotalLossRealised,
             &(total_loss_realised + funded_amount),
         );
-        if principal_paid_to_issuer {
-            let new_total_deposits = totals
-                .deposits
-                .checked_sub(funded_amount)
-                .unwrap_or_else(|| panic_with_error!(&env, PoolError::Overflow));
+        if let Some(new_total_deposits) = new_total_deposits {
             env.storage()
                 .instance()
                 .set(&DataKey::TotalDeposits, &new_total_deposits);
         }
-
-        let active_count = totals.active_invoices;
-        let new_active_count = active_count
-            .checked_sub(1)
-            .unwrap_or_else(|| panic_with_error!(&env, PoolError::ActiveCountUnderflow));
         env.storage()
             .instance()
             .set(&DataKey::ActiveInvoiceCount, &new_active_count);
-
-        // Persist the Defaulted status on the invoice contract (step 2 of the
-        // documented cross-contract sequence). This runs after the active-count
-        // underflow check so a mismatched default still surfaces
-        // ActiveCountUnderflow (#17) rather than an invoice lookup error from
-        // mark_defaulted. mark_defaulted is idempotent: when
-        // invoice.trigger_default already transitioned the status to Defaulted
-        // before invoking this pool entry point, the call is a no-op.
-        let mut args = Vec::new(&env);
-        args.push_back(invoice_id.clone().into_val(&env));
-        let _: bool = env.invoke_contract(
-            &invoice_contract,
-            &Symbol::new(&env, "mark_defaulted"),
-            args,
-        );
 
         env.storage().persistent().remove(&funded_key);
 

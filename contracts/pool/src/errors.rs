@@ -41,4 +41,9 @@ pub enum PoolError {
     /// (`get_buyer`). The refund is invoice-computed data, so its destination
     /// must be the invoice's canonical buyer (#969).
     BuyerMismatch = 27,
+    /// `handle_default` asked the invoice contract to persist the `Defaulted`
+    /// status and it reported that the transition did not happen. The pool
+    /// books no loss in that case, so an invoice that is still active can
+    /// never leave the pool reporting a realised loss (#971).
+    InvoiceDefaultNotRecorded = 28,
 }

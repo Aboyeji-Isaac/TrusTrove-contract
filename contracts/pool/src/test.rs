@@ -197,6 +197,42 @@ mod failing_escrow_default {
     }
 }
 
+// --------------- Mock Invoice (mark_defaulted failure) ---------------
+// Stands in for the pool's configured invoice contract to prove that
+// handle_default does not book the loss before invoice.mark_defaulted
+// persists the Defaulted status (issue #971). Escrow stays real in these
+// tests, so escrow.handle_default succeeds and mark_defaulted is the first
+// failing step. Two failure modes are covered: a panicking invoice (the
+// normal contract-error path) and an invoice that simply reports `false`.
+
+mod failing_mark_defaulted {
+    use soroban_sdk::{contract, contractimpl, BytesN, Env};
+
+    #[contract]
+    pub struct MockFailingMarkDefaultedInvoice;
+
+    #[contractimpl]
+    impl MockFailingMarkDefaultedInvoice {
+        pub fn mark_defaulted(_env: Env, _invoice_id: BytesN<32>) -> bool {
+            panic!("invoice mark_defaulted failed");
+        }
+    }
+}
+
+mod refusing_mark_defaulted {
+    use soroban_sdk::{contract, contractimpl, BytesN, Env};
+
+    #[contract]
+    pub struct MockRefusingMarkDefaultedInvoice;
+
+    #[contractimpl]
+    impl MockRefusingMarkDefaultedInvoice {
+        pub fn mark_defaulted(_env: Env, _invoice_id: BytesN<32>) -> bool {
+            false
+        }
+    }
+}
+
 // --------------- Mock Invoice (unbounded face value) ---------------
 //
 // Stands in for the pool's configured invoice contract to prove that
@@ -3142,6 +3178,172 @@ fn test_handle_default_rolls_back_on_escrow_failure() {
     assert_eq!(invoice_status_after, 2, "invoice must stay Funded");
 }
 
+/// Issue #971: `handle_default` must not leave the pool reporting a loss while
+/// the invoice remains active. The configured invoice is swapped for a stub
+/// that fails `mark_defaulted` after escrow's `handle_default` has already
+/// succeeded, so the failure lands exactly at the step that used to run
+/// *after* the pool accounting writes.
+#[test]
+fn test_handle_default_rolls_back_when_mark_defaulted_fails() {
+    let te = setup();
+    te.pool.deposit(&te.lp, &100_000_000_000);
+    let invoice_id = create_and_list(&te, &te.usdc_id);
+    te.pool.fund_invoice(&invoice_id);
+    te.env
+        .ledger()
+        .set_timestamp(te.env.ledger().timestamp() + 60);
+
+    // Escrow is left as the real contract: its handle_default succeeds (the
+    // funding path already paid the issuer, so escrow returns false with the
+    // issuer-release marker set), which puts the failure squarely in
+    // mark_defaulted.
+    let escrow = RealEscrowClient::new(&te.env, &te.escrow_id);
+    assert!(
+        escrow.was_released_to_issuer(&invoice_id),
+        "escrow must have released the principal to the issuer before the default"
+    );
+    assert_eq!(escrow.get_locked(&invoice_id), 0);
+
+    let failing_invoice_id = te.env.register_contract(
+        None,
+        failing_mark_defaulted::MockFailingMarkDefaultedInvoice,
+    );
+    te.env.as_contract(&te.pool_id, || {
+        te.env
+            .storage()
+            .instance()
+            .set(&DataKey::InvoiceContract, &failing_invoice_id);
+    });
+
+    let stats_before = te.pool.get_stats();
+    let position_before = te.pool.get_lp_position(&te.lp);
+    let invoice_status_before = te.invoice.get_status(&invoice_id);
+    let funded_key = DataKey::FundedInvoice(invoice_id.clone());
+    let usdc = MockTokenClient::new(&te.env, &te.usdc_id);
+    let pool_balance_before = usdc.balance(&te.pool_id);
+
+    let result = te.pool.try_handle_default(&invoice_id);
+    assert!(
+        result.is_err(),
+        "handle_default must revert when invoice.mark_defaulted fails"
+    );
+
+    let stats_after = te.pool.get_stats();
+    assert_eq!(
+        stats_after.total_deposits, stats_before.total_deposits,
+        "total_deposits must not shrink when mark_defaulted fails"
+    );
+    assert_eq!(
+        stats_after.total_funded, stats_before.total_funded,
+        "total_funded must not change when mark_defaulted fails"
+    );
+    assert_eq!(
+        stats_after.total_loss_realised, stats_before.total_loss_realised,
+        "no loss may be realised while the invoice is still active"
+    );
+    assert_eq!(
+        stats_after.active_invoice_count, stats_before.active_invoice_count,
+        "active_invoice_count must not change when mark_defaulted fails"
+    );
+    assert_eq!(
+        stats_after.total_shares, stats_before.total_shares,
+        "total_shares must not change when mark_defaulted fails"
+    );
+    assert_eq!(
+        stats_after.total_yield_distributed, stats_before.total_yield_distributed,
+        "total_yield_distributed must not change when mark_defaulted fails"
+    );
+
+    let position_after = te.pool.get_lp_position(&te.lp);
+    assert_eq!(position_after.shares, position_before.shares);
+    assert_eq!(
+        position_after.usdc_value, position_before.usdc_value,
+        "LP share value must not move when mark_defaulted fails"
+    );
+
+    let funded_entry_after: Option<u128> = te.env.as_contract(&te.pool_id, || {
+        te.env.storage().persistent().get(&funded_key)
+    });
+    assert_eq!(
+        funded_entry_after,
+        Some(DEFAULT_FUNDED_AMOUNT),
+        "the funded invoice entry must survive the failed default"
+    );
+
+    assert_eq!(
+        usdc.balance(&te.pool_id),
+        pool_balance_before,
+        "pool token balance must not change when mark_defaulted fails"
+    );
+    assert_eq!(
+        te.invoice.get_status(&invoice_id),
+        invoice_status_before,
+        "invoice status must not change when mark_defaulted fails"
+    );
+    assert_eq!(
+        te.invoice.get_status(&invoice_id),
+        2,
+        "invoice must stay Funded"
+    );
+}
+
+/// Issue #971, fail-closed half: an invoice contract that reports the
+/// `Defaulted` status was not persisted (without trapping) is rejected with the
+/// typed `PoolError::InvoiceDefaultNotRecorded` (#28), and the pool still books
+/// nothing.
+#[test]
+fn test_handle_default_rejects_unpersisted_default() {
+    let te = setup();
+    te.pool.deposit(&te.lp, &100_000_000_000);
+    let invoice_id = create_and_list(&te, &te.usdc_id);
+    te.pool.fund_invoice(&invoice_id);
+    te.env
+        .ledger()
+        .set_timestamp(te.env.ledger().timestamp() + 60);
+
+    let refusing_invoice_id = te.env.register_contract(
+        None,
+        refusing_mark_defaulted::MockRefusingMarkDefaultedInvoice,
+    );
+    te.env.as_contract(&te.pool_id, || {
+        te.env
+            .storage()
+            .instance()
+            .set(&DataKey::InvoiceContract, &refusing_invoice_id);
+    });
+
+    let stats_before = te.pool.get_stats();
+    let invoice_status_before = te.invoice.get_status(&invoice_id);
+
+    let result = te.pool.try_handle_default(&invoice_id);
+    let error = std::format!("{result:?}");
+    assert!(
+        result.is_err(),
+        "a default the invoice did not persist must be rejected: {error}"
+    );
+    assert!(
+        error.contains("#28"),
+        "expected PoolError::InvoiceDefaultNotRecorded: {error}"
+    );
+
+    let stats_after = te.pool.get_stats();
+    assert_eq!(stats_after.total_deposits, stats_before.total_deposits);
+    assert_eq!(stats_after.total_funded, stats_before.total_funded);
+    assert_eq!(
+        stats_after.total_loss_realised,
+        stats_before.total_loss_realised
+    );
+    assert_eq!(
+        stats_after.active_invoice_count,
+        stats_before.active_invoice_count
+    );
+    assert_eq!(
+        te.pool.get_funded_amount(&invoice_id),
+        Some(DEFAULT_FUNDED_AMOUNT)
+    );
+    assert_eq!(te.invoice.get_status(&invoice_id), invoice_status_before);
+}
+
 #[test]
 #[should_panic(expected = "Error(Auth, InvalidAction)")]
 fn test_handle_default_requires_invoice_contract_authorization() {
@@ -4849,8 +5051,10 @@ fn test_get_escrow_contract_panics_when_uninitialized() {
 // never an untyped host panic. These tests cover the remaining entry points
 // and views after the bare `unwrap()` / `expect()` reads were replaced
 // (`get_admin`, `get_invoice_contract`, `get_escrow_contract` and
-// `get_usdc_asset` are pinned alongside; `deposit`, `withdraw` and
-// `fund_invoice` already had typed-error tests).
+// `get_usdc_asset` are pinned alongside; `deposit` and `withdraw` already had
+// typed-error tests). #973 pinned the same error family for every path that
+// goes through the three dependency-address helpers: `fund_invoice`,
+// `handle_default` and `get_usdc_asset`.
 
 fn uninitialized_pool() -> (Env, PoolContractClient<'static>) {
     let env = Env::default();
@@ -4902,10 +5106,47 @@ fn test_receive_repayment_with_refund_panics_with_typed_not_initialized() {
 
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
+fn test_fund_invoice_panics_with_typed_not_initialized() {
+    let (env, pool) = uninitialized_pool();
+    let invoice_id = BytesN::from_array(&env, &[0u8; 32]);
+    pool.fund_invoice(&invoice_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
 fn test_handle_default_panics_with_typed_not_initialized() {
     let (env, pool) = uninitialized_pool();
     let invoice_id = BytesN::from_array(&env, &[0u8; 32]);
     pool.handle_default(&invoice_id);
+}
+
+// The three dependency-address helpers (`invoice_contract`, `escrow_contract`,
+// `funding_asset`) all surface the same typed error family before
+// initialization (#973): `fund_invoice`, `handle_default` and `get_usdc_asset`
+// must each abort with `PoolError::NotInitialized` (#2) rather than an untyped
+// host panic from a raw `expect`.
+#[test]
+fn test_pre_initialization_dependency_helpers_share_typed_error_family() {
+    let (env, pool) = uninitialized_pool();
+    let invoice_id = BytesN::from_array(&env, &[0u8; 32]);
+
+    let fund_invoice_error = std::format!("{:?}", pool.try_fund_invoice(&invoice_id));
+    assert!(
+        fund_invoice_error.contains("#2"),
+        "fund_invoice must fail with PoolError::NotInitialized: {fund_invoice_error}"
+    );
+
+    let handle_default_error = std::format!("{:?}", pool.try_handle_default(&invoice_id));
+    assert!(
+        handle_default_error.contains("#2"),
+        "handle_default must fail with PoolError::NotInitialized: {handle_default_error}"
+    );
+
+    let get_usdc_asset_error = std::format!("{:?}", pool.try_get_usdc_asset());
+    assert!(
+        get_usdc_asset_error.contains("#2"),
+        "get_usdc_asset must fail with PoolError::NotInitialized: {get_usdc_asset_error}"
+    );
 }
 
 //  CONSTANTS LOCATION TESTS (issue #592)
