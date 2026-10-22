@@ -78,7 +78,11 @@ struct PoolTotals {
 
 #[contractimpl]
 impl PoolContract {
-    /// Initializes the pool contract with admin and external contract references.
+    /// Constructs the pool contract with admin and external contract references.
+    ///
+    /// Runs atomically at deploy time (Soroban protocol constructor, #827):
+    /// there is no window in which the instance exists without its wiring, so
+    /// no one can front-run initialization.
     ///
     /// # Arguments
     /// * `env` - The Soroban environment.
@@ -116,35 +120,39 @@ impl PoolContract {
     /// Requires authorization from `admin`.
     ///
     /// # Wiring order
-    /// `escrow_contract` must already be initialized before this call, since
-    /// `initialize` cross-checks `escrow_contract.get_usdc_asset()` against
-    /// its own `funding_asset` to catch a misconfigured deploy where escrow was
-    /// wired up with a different token.
+    /// `escrow_contract` must already be constructed before this deployment,
+    /// since the constructor cross-checks `escrow_contract.get_usdc_asset()`
+    /// against its own `funding_asset` to catch a misconfigured deploy where
+    /// escrow was wired up with a different token.
     ///
     /// # Panics
-    /// * `AlreadyInitialized` if the contract has already been initialized.
     /// * `InvalidConfiguration` if core contract addresses collide, if
     ///   `treasury` equals the pool itself or any settlement contract address,
-    ///   or if `share_name`/`share_symbol` is empty (a wallet that cannot render
-    ///   the share token is treated as a misconfigured deploy).
+    ///   or if `share_name`/`share_symbol` is empty (a wallet that cannot
+    ///   render the share token is treated as a misconfigured deploy).
     /// * `EscrowAssetMismatch` if `escrow_contract`'s configured USDC asset
     ///   does not match `funding_asset`.
+    ///   A panic here aborts the deployment transaction, so no misconfigured
+    ///   instance is ever created. `AlreadyInitialized` is unreachable from
+    ///   this entry point (the protocol invokes the constructor exactly once)
+    ///   and is kept only for error-code stability.
     ///
     /// # Returns
     /// * `()` - No value is returned.
     ///
     /// # Example
     /// ```ignore
-    /// escrow_client.initialize(&admin, &pool, &invoice, &usdc); // escrow first
-    /// client.initialize(&admin, &invoice, &escrow, &usdc, &registry, &admin,
-    ///     &min_deposit, &share_name, &share_symbol, &share_decimals);
+    /// // escrow first, then the pool, each constructed at deploy time:
+    /// // env.register_at(EscrowContract, (admin, pool_addr, usdc), pool_addr)
+    /// // env.register(PoolContract, (admin, invoice, escrow, usdc, registry,
+    /// //     treasury, min_deposit, share_name, share_symbol, share_decimals))
     /// ```
     // One-shot wiring for a pool instance: six contract/admin references, the
     // treasury, the deposit floor and the three SEP-41 share-metadata values.
     // Bundling the metadata into a struct would clear the argument-count lint
     // but would make the initializer's wiring less explicit at call sites.
     #[allow(clippy::too_many_arguments)]
-    pub fn initialize(
+    pub fn __constructor(
         env: Env,
         admin: Address,
         invoice_contract: Address,
@@ -158,9 +166,6 @@ impl PoolContract {
         share_decimals: u32,
     ) {
         require_not_paused(&env);
-        if Self::admin(&env).is_some() {
-            panic_with_error!(&env, PoolError::AlreadyInitialized);
-        }
         if admin == invoice_contract
             || admin == escrow_contract
             || admin == funding_asset
