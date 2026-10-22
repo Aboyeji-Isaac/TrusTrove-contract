@@ -303,11 +303,58 @@ Or on Windows (PowerShell):
 powershell ./scripts/verify.ps1
 ```
 
-This checks each contract responds to a read-only query
-(`get_admin`, `get_counts`, `get_stats`, `get_locked`) and that the
+This checks every initialized contract's on-chain `get_admin` equals the
+deployer address (see [Front-run Initialization
+Detection](#front-run-initialization-detection-issue-825) below) and that
+each contract responds to a read-only query
+(`get_admin`, `get_counts`, `get_stats`, `get_locked`), and that the
 invoice contract's post-deploy wiring is in place
 (`get_escrow_contract`, `get_agent_registry_contract`,
 `is_supported_asset`).
+
+## Front-run Initialization Detection (Issue #825)
+
+Issue #825 found that `initialize` only required auth from the `admin` address
+passed as an argument, so between the *deploy* transaction and the *initialize*
+transaction anyone could initialize a freshly deployed, not-yet-initialized
+contract with **their own** admin. Our initialize would then fail with
+`AlreadyInitialized` — and the attacker would own the admin slot.
+
+Issue #827 closed that window: configuration now seeds from a protocol
+`__constructor` that runs inside the deploy transaction, so deploy and
+initialization are atomic and no uninitialized-but-addressable contract
+exists. `AlreadyInitialized` is therefore unreachable in a normal run.
+
+`verify_admin` is kept as defense in depth rather than as the primary control:
+it is cheap, and it catches the cases the constructor cannot — a resumed
+deployment against addresses written by an older script version, or a
+`--only <contract>` rerun that reuses a stale `.deployed-addresses` entry.
+`deploy.sh` therefore still:
+
+1. Uses `invoke_init` only for the invoice wiring calls (`set_pool_contract`,
+   `set_escrow_contract`, `add_supported_asset`,
+   `set_agent_registry_contract`); its failure handler still distinguishes an
+   `AlreadyInitialized`-style error from a transient one.
+2. After every deploy, runs `verify_admin`, which reads `get_admin` back from
+   the contract and **aborts the deployment** unless it equals the deployer
+   address resolved from `DEPLOYER_ACCOUNT`. `scripts/verify.sh` performs
+   the same comparison for the registry, invoice, both pools, and both
+   escrows (`verify_admin_match`), so a resumed or previously-deployed
+   setup can be re-audited at any time.
+
+If you see `POSSIBLE FRONT-RUN INITIALIZATION`:
+
+1. Do **not** use those addresses — the admin (and every later admin-gated
+   operation: wiring, upgrades, pausing) belongs to whoever constructed the
+   contract first.
+2. Redeploy the affected contracts from a clean state:
+   `./scripts/deploy.sh --fresh` (or `--only <contract>` per contract).
+   `--fresh` wipes `.deployed-addresses`, so the contracts are constructed
+   again against new instances; the post-deploy `get_admin` assertion
+   runs again automatically.
+3. Re-run `bash scripts/verify.sh` and confirm every
+   `[PASS] <contract> admin is the deployer` line before wiring anything
+   downstream.
 
 You can also verify on [Stellar Expert Testnet](https://stellar.expert/explorer/testnet).
 

@@ -356,13 +356,86 @@ invoke_init() {
       "$@" 2>&1); then
     echo "ERROR: Invocation failed for $label:"
     echo "  $output"
-    echo "  The contract is deployed but this wiring step did not complete."
-    echo "  Fix the error and rerun — this step will be retried automatically."
+    # Issue #825: distinguish a front-run initialization from a transient
+    # error. `initialize` panics with AlreadyInitialized (#1) if the
+    # storage Admin key is set — and until this transaction lands, ANY
+    # address can initialize a fresh deployment with their own admin. A
+    # rerun can never win that race retroactively, so saying "rerun" here
+    # would be misleading. Constructor-migrated contracts (#827) reach this
+    # path only for the post-deploy wiring calls, so the generic branch
+    # speaks about the wiring step.
+    case "$output" in
+      *AlreadyInitialized*|*"Error(Contract, #1)"*)
+        echo "  This contract was ALREADY INITIALIZED — possibly by someone"
+        echo "  other than this deployer (front-run initialization, issue #825)."
+        echo "  Rerunning cannot fix it: check who holds admin with"
+        echo "  scripts/verify.sh (it compares get_admin against the deployer)"
+        echo "  and redeploy the contract with --fresh. See DEPLOYMENT.md,"
+        echo "  'Front-run initialization detection'."
+        ;;
+      *)
+        echo "  The contract is deployed but this wiring step did not complete."
+        echo "  Fix the error and rerun — this step will be retried automatically."
+        ;;
+    esac
     return 1
   fi
 
   save_address "$init_key" "true"
   echo "  $label applied successfully."
+}
+
+# ---------------------------------------------------------------------------
+# 4b. Post-initialize admin verification (issue #825)
+# ---------------------------------------------------------------------------
+
+# verify_admin <LABEL> <CONTRACT_ID>
+# Reads get_admin back from the contract just initialized and aborts unless
+# it equals $DEPLOYER_ADDRESS. `initialize` only authorizes whatever admin
+# is passed in, so a front-runner who initialized first with their own
+# address would otherwise go unnoticed — our own initialize would simply
+# fail with AlreadyInitialized and the deploy artifacts would be poisoned.
+# Every contract this script deploys (registry, invoice, escrow, pool)
+# exposes get_admin.
+verify_admin() {
+  local label="$1"
+  local contract_id="$2"
+
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY-RUN] Would assert get_admin == $DEPLOYER_ADDRESS for $label"
+    return 0
+  fi
+
+  # Skip contracts that were deployed in dry-run mode (no real address).
+  case "$contract_id" in
+    ""|"<dry-run>") return 0 ;;
+  esac
+
+  local on_chain_admin
+  if ! on_chain_admin=$("$STELLAR" contract invoke \
+      --id "$contract_id" \
+      --source "$DEPLOYER_ACCOUNT" \
+      --network testnet \
+      -- get_admin 2>&1); then
+    echo "ERROR: Could not read on-chain admin for $label ($contract_id):"
+    echo "  $on_chain_admin"
+    echo "  POSSIBLE FRONT-RUN INITIALIZATION or uninitialized contract."
+    echo "  Do NOT use this deployment — redeploy with --fresh"
+    echo "  (see DEPLOYMENT.md, 'Front-run initialization detection')."
+    exit 1
+  fi
+  on_chain_admin="$(printf '%s' "$on_chain_admin" | tr -d '"' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+
+  if [ "$on_chain_admin" != "$DEPLOYER_ADDRESS" ]; then
+    echo "ERROR: $label ($contract_id) reports admin '$on_chain_admin',"
+    echo "  but this deployer is '$DEPLOYER_ADDRESS'."
+    echo "  POSSIBLE FRONT-RUN INITIALIZATION: someone else initialized this"
+    echo "  contract with their own admin before our initialize landed."
+    echo "  Do NOT use this deployment — redeploy with --fresh"
+    echo "  (see DEPLOYMENT.md, 'Front-run initialization detection')."
+    exit 1
+  fi
+  echo "  [OK] $label on-chain admin verified: $on_chain_admin"
 }
 
 # ---------------------------------------------------------------------------
@@ -494,6 +567,7 @@ if _should_run "registry"; then
     "" \
     --admin "$DEPLOYER_ADDRESS")
   echo "Registry: $REGISTRY_ID"
+  verify_admin "registry" "$REGISTRY_ID"
   echo ""
 fi
 
@@ -510,6 +584,7 @@ if _should_run "invoice"; then
     --admin "$DEPLOYER_ADDRESS" \
     --registry_contract "$REGISTRY_ID")
   echo "Invoice: $INVOICE_ID"
+  verify_admin "invoice" "$INVOICE_ID"
   echo ""
 fi
 
@@ -541,6 +616,7 @@ if _should_run "escrow_usdc"; then
     --pool_contract "$POOL_USDC_TARGET_ID" \
     --usdc_asset "$USDC_ISSUER")
   echo "USDC Escrow: $ESCROW_USDC_ID"
+  verify_admin "escrow_usdc" "$ESCROW_USDC_ID"
   echo ""
 fi
 
@@ -586,6 +662,7 @@ if _should_run "pool_usdc"; then
     exit 1
   fi
   echo "USDC Pool: $POOL_USDC_ID"
+  verify_admin "pool_usdc" "$POOL_USDC_ID"
   echo ""
 fi
 
@@ -607,6 +684,7 @@ if _should_run "escrow_xlm"; then
     --pool_contract "$POOL_XLM_TARGET_ID" \
     --usdc_asset "$XLM_ASSET")
   echo "XLM Escrow: $ESCROW_XLM_ID"
+  verify_admin "escrow_xlm" "$ESCROW_XLM_ID"
   echo ""
 fi
 
@@ -648,6 +726,7 @@ if _should_run "pool_xlm"; then
     exit 1
   fi
   echo "XLM Pool: $POOL_XLM_ID"
+  verify_admin "pool_xlm" "$POOL_XLM_ID"
   echo ""
 fi
 
