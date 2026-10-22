@@ -473,7 +473,7 @@ fn setup() -> TestEnv {
     );
 
     let invoice = RealInvoiceClient::new(&env, &invoice_id);
-    let escrow = RealEscrowClient::new(&env, &escrow_id);
+    let _escrow = RealEscrowClient::new(&env, &escrow_id);
 
     env.register_at(
         &pool_id,
@@ -4548,7 +4548,7 @@ mod real_registry_integration {
         );
 
         let invoice = RealInvoiceClient::new(&env, &invoice_id_addr);
-        let escrow = RealEscrowClient::new(&env, &escrow_id);
+        let _escrow = RealEscrowClient::new(&env, &escrow_id);
 
         env.register_at(
             &pool_id,

@@ -39,7 +39,7 @@ fn test_initialize() {
 
 #[test]
 fn test_register_issuer() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     let metadata = map![
         &env,
@@ -57,7 +57,7 @@ fn test_register_issuer() {
 
 #[test]
 fn test_register_buyer() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let buyer = Address::generate(&env);
     let metadata = map![&env];
     let result = client.register_buyer(&buyer, &metadata);
@@ -69,7 +69,7 @@ fn test_register_buyer() {
 
 #[test]
 fn test_is_verified_returns_false_for_registered_but_unverified() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     client.register_issuer(&issuer, &map![&env]);
     assert!(!client.is_verified(&issuer));
@@ -77,7 +77,7 @@ fn test_is_verified_returns_false_for_registered_but_unverified() {
 
 #[test]
 fn test_is_verified_returns_false_for_unknown() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let unknown = Address::generate(&env);
     assert!(!client.is_verified(&unknown));
 }
@@ -97,7 +97,7 @@ fn test_revoke_sets_verified_false() {
 
 #[test]
 fn test_revoke_already_revoked_returns_true_no_reemit() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     client.register_issuer(&issuer, &map![&env]);
     assert!(!client.is_verified(&issuer));
@@ -137,7 +137,7 @@ fn test_revoke_already_revoked_returns_true_no_reemit() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_revoke_unregistered_panics() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let unknown = Address::generate(&env);
     client.revoke(&unknown);
 }
@@ -280,14 +280,14 @@ fn test_reinstate_wrong_auth_panics() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_reinstate_unregistered_panics() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let unknown = Address::generate(&env);
     client.reinstate(&unknown);
 }
 
 #[test]
 fn test_reinstate_on_pending_profile_does_not_verify() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     client.register_issuer(&issuer, &map![&env]);
 
@@ -394,7 +394,7 @@ fn count_events_named(env: &Env, name: &str) -> u32 {
 /// way to move a profile out of `Pending`.
 #[test]
 fn test_reinstate_on_pending_profile_leaves_profile_unchanged() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     let metadata = map![
         &env,
@@ -628,7 +628,7 @@ fn test_reinstate_emits_exactly_one_address_reinstated_event() {
 
 #[test]
 fn test_update_metadata_self_succeeds() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     let metadata = map![
         &env,
@@ -656,7 +656,7 @@ fn test_update_metadata_self_succeeds() {
 #[test]
 #[should_panic(expected = "Error(Contract, #7)")]
 fn test_update_metadata_unregistered_panics() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let unknown = Address::generate(&env);
     let metadata = map![&env];
     client.update_metadata(&unknown, &metadata);
@@ -788,7 +788,7 @@ fn test_update_metadata_preserves_flags_on_revoked_profile() {
 
 #[test]
 fn test_update_metadata_preserves_flags_on_pending_profile() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     client.register_issuer(&issuer, &map![&env]);
 
@@ -870,7 +870,7 @@ fn test_update_metadata_preserves_flags_on_buyer_roles() {
 
 #[test]
 fn test_update_profile_happy_path() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     let metadata = map![
         &env,
@@ -967,7 +967,7 @@ fn test_update_profile_wrong_auth_panics() {
 #[test]
 #[should_panic(expected = "Error(Contract, #7)")]
 fn test_update_profile_unregistered_panics() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let unknown = Address::generate(&env);
     let metadata = map![&env];
     client.update_profile(&unknown, &metadata);
@@ -976,7 +976,7 @@ fn test_update_profile_unregistered_panics() {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_duplicate_registration_panics() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     client.register_issuer(&issuer, &map![&env]);
     client.register_issuer(&issuer, &map![&env]);
@@ -1109,14 +1109,14 @@ fn test_register_buyer_then_issuer_panics() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_get_profile_unknown_panics() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let unknown = Address::generate(&env);
     client.get_profile(&unknown);
 }
 
 #[test]
 fn test_batch_register_issuers_empty_vec() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let entries = Vec::new(&env);
     let skipped = client.batch_register_issuers(&entries);
     assert_eq!(skipped.len(), 0);
@@ -1124,7 +1124,7 @@ fn test_batch_register_issuers_empty_vec() {
 
 #[test]
 fn test_batch_register_issuers_all_new() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env);
     let issuer2 = Address::generate(&env);
@@ -1173,7 +1173,7 @@ fn test_batch_register_issuers_all_new() {
 
 #[test]
 fn test_batch_register_issuers_all_duplicate() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env);
     let issuer2 = Address::generate(&env);
@@ -1196,7 +1196,7 @@ fn test_batch_register_issuers_all_duplicate() {
 
 #[test]
 fn test_batch_register_issuers_mixed() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env); // existing
     let issuer2 = Address::generate(&env); // new
@@ -1226,7 +1226,7 @@ fn test_batch_register_issuers_mixed() {
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_batch_register_issuers_invalid_metadata_rejects_all() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env); // would be valid
     let issuer2 = Address::generate(&env); // would be valid
@@ -1261,7 +1261,7 @@ fn test_batch_register_issuers_invalid_metadata_rejects_all() {
 
 #[test]
 fn test_batch_register_issuers_invalid_metadata_leaves_state_clean() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env); // would be valid
     let issuer2 = Address::generate(&env); // has invalid metadata (empty key)
@@ -1306,7 +1306,7 @@ fn test_batch_register_issuers_invalid_metadata_leaves_state_clean() {
 
 #[test]
 fn test_batch_register_buyers_empty_vec() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let entries = Vec::new(&env);
     let skipped = client.batch_register_buyers(&entries);
     assert_eq!(skipped.len(), 0);
@@ -1314,7 +1314,7 @@ fn test_batch_register_buyers_empty_vec() {
 
 #[test]
 fn test_batch_register_buyers_all_new() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let buyer1 = Address::generate(&env);
     let buyer2 = Address::generate(&env);
@@ -1363,7 +1363,7 @@ fn test_batch_register_buyers_all_new() {
 
 #[test]
 fn test_batch_register_buyers_all_duplicate() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let buyer1 = Address::generate(&env);
     let buyer2 = Address::generate(&env);
@@ -1386,7 +1386,7 @@ fn test_batch_register_buyers_all_duplicate() {
 
 #[test]
 fn test_batch_register_buyers_mixed() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let buyer1 = Address::generate(&env); // existing
     let buyer2 = Address::generate(&env); // new
@@ -1417,7 +1417,7 @@ fn test_batch_register_buyers_mixed() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_batch_register_buyers_exceeds_limit() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let mut entries = Vec::new(&env);
     for _ in 0..51 {
         let address = Address::generate(&env);
@@ -1430,7 +1430,7 @@ fn test_batch_register_buyers_exceeds_limit() {
 
 #[test]
 fn test_batch_register_issuers_accepts_max_metadata_limits() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env);
     let issuer2 = Address::generate(&env);
@@ -1501,7 +1501,7 @@ fn test_batch_register_issuers_accepts_max_metadata_limits() {
 
 #[test]
 fn test_batch_register_buyers_accepts_max_metadata_limits() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let buyer1 = Address::generate(&env);
     let buyer2 = Address::generate(&env);
@@ -1572,7 +1572,7 @@ fn test_batch_register_buyers_accepts_max_metadata_limits() {
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_batch_register_issuers_rejects_oversized_entry_count() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env);
     let issuer2 = Address::generate(&env);
@@ -1608,7 +1608,7 @@ fn test_batch_register_issuers_rejects_oversized_entry_count() {
 
 #[test]
 fn test_batch_register_issuers_rejects_oversized_entry_count_leaves_state_clean() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env);
     let issuer2 = Address::generate(&env);
@@ -1662,7 +1662,7 @@ fn test_batch_register_issuers_rejects_oversized_entry_count_leaves_state_clean(
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_batch_register_issuers_rejects_oversized_key() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env);
     let issuer2 = Address::generate(&env);
@@ -1695,7 +1695,7 @@ fn test_batch_register_issuers_rejects_oversized_key() {
 
 #[test]
 fn test_batch_register_issuers_rejects_oversized_key_leaves_state_clean() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env);
     let issuer2 = Address::generate(&env);
@@ -1741,7 +1741,7 @@ fn test_batch_register_issuers_rejects_oversized_key_leaves_state_clean() {
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_batch_register_issuers_rejects_oversized_value() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env);
     let issuer2 = Address::generate(&env);
@@ -1774,7 +1774,7 @@ fn test_batch_register_issuers_rejects_oversized_value() {
 
 #[test]
 fn test_batch_register_issuers_rejects_oversized_value_leaves_state_clean() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env);
     let issuer2 = Address::generate(&env);
@@ -1820,7 +1820,7 @@ fn test_batch_register_issuers_rejects_oversized_value_leaves_state_clean() {
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_batch_register_issuers_rejects_empty_key() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env);
     let issuer2 = Address::generate(&env);
@@ -1849,7 +1849,7 @@ fn test_batch_register_issuers_rejects_empty_key() {
 
 #[test]
 fn test_batch_register_issuers_rejects_empty_key_leaves_state_clean() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env);
     let issuer2 = Address::generate(&env);
@@ -1891,7 +1891,7 @@ fn test_batch_register_issuers_rejects_empty_key_leaves_state_clean() {
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_batch_register_issuers_rejects_empty_value() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env);
     let issuer2 = Address::generate(&env);
@@ -1920,7 +1920,7 @@ fn test_batch_register_issuers_rejects_empty_value() {
 
 #[test]
 fn test_batch_register_issuers_rejects_empty_value_leaves_state_clean() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let issuer1 = Address::generate(&env);
     let issuer2 = Address::generate(&env);
@@ -1962,7 +1962,7 @@ fn test_batch_register_issuers_rejects_empty_value_leaves_state_clean() {
 #[test]
 fn test_batch_register_buyers_metadata_bounds_mirror_issuers() {
     // Buyers use the same validate_metadata path; spot-check the same boundaries.
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let buyer1 = Address::generate(&env);
     let buyer2 = Address::generate(&env);
@@ -2054,7 +2054,7 @@ fn test_verify_profile_wrong_auth_panics() {
 
 #[test]
 fn test_get_verification_status_unregistered() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let unknown = Address::generate(&env);
     assert_eq!(
         client.get_verification_status(&unknown),
@@ -2089,7 +2089,7 @@ fn test_get_verification_status_revoked() {
 
 #[test]
 fn test_get_verification_status_distinguishes_pending_from_unregistered() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let never_registered = Address::generate(&env);
     let pending = Address::generate(&env);
@@ -2171,7 +2171,7 @@ fn test_documented_verification_state_transitions() {
 
 #[test]
 fn test_get_role_returns_issuer_role() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     client.register_issuer(&issuer, &map![&env]);
     // Decoded on-chain: no need to reverse-engineer packed_flags (#609).
@@ -2192,7 +2192,7 @@ fn test_get_role_returns_buyer_and_survives_verification_changes() {
 
 #[test]
 fn test_get_role_unregistered_returns_none() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let unknown = Address::generate(&env);
     assert_eq!(client.get_role(&unknown), None);
 }
@@ -2241,7 +2241,7 @@ fn test_get_verification_status_re_verified_returns_verified() {
 
 #[test]
 fn test_transfer_admin_changes_admin() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let new_admin = Address::generate(&env);
     client.transfer_admin(&new_admin);
     assert_eq!(client.get_admin(), new_admin);
@@ -2293,7 +2293,7 @@ fn test_transfer_admin_bypasses_transfer_ownership_dual_auth() {
 #[test]
 #[should_panic(expected = "Error(Auth, InvalidAction)")]
 fn test_transfer_admin_by_non_admin_panics() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let new_admin = Address::generate(&env);
     env.set_auths(&[]);
     client.transfer_admin(&new_admin);
@@ -2322,7 +2322,7 @@ fn test_transfer_admin_emits_event() {
 
 #[test]
 fn test_registry_transfer_ownership_changes_admin() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let new_admin = Address::generate(&env);
     client.transfer_ownership(&new_admin);
     assert_eq!(client.get_admin(), new_admin);
@@ -2331,7 +2331,7 @@ fn test_registry_transfer_ownership_changes_admin() {
 #[test]
 #[should_panic(expected = "Error(Auth, InvalidAction)")]
 fn test_registry_transfer_ownership_requires_both_auths() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let new_admin = Address::generate(&env);
     env.set_auths(&[]);
     client.transfer_ownership(&new_admin);
@@ -2365,7 +2365,7 @@ fn prop_is_verified_always_consistent_with_get_verification_status_after_registe
         .run(
             &(any::<bool>(), metadata_entries()),
             |(is_buyer, entries)| {
-                let (env, admin, client) = setup();
+                let (env, _admin, client) = setup();
                 let address = Address::generate(&env);
                 let metadata = build_metadata(&env, &entries);
                 if is_buyer {
@@ -2420,7 +2420,7 @@ fn prop_unregistered_address_never_verified() {
         .run(
             &prop::collection::vec((any::<bool>(), metadata_entries()), 1..=5),
             |other_profiles| {
-                let (env, admin, client) = setup();
+                let (env, _admin, client) = setup();
                 for (is_buyer, entries) in &other_profiles {
                     let addr = Address::generate(&env);
                     let metadata = build_metadata(&env, entries);
@@ -2480,7 +2480,7 @@ fn prop_re_verify_after_revoke_restores_verified_state() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_batch_register_issuers_exceeds_limit() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let mut entries = Vec::new(&env);
     for _ in 0..51 {
         let address = Address::generate(&env);
@@ -2520,7 +2520,7 @@ fn test_profile_packing_correctness() {
 
 #[test]
 fn test_metadata_empty_map_accepted() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     let metadata = map![&env];
     let result = client.register_issuer(&issuer, &metadata);
@@ -2531,7 +2531,7 @@ fn test_metadata_empty_map_accepted() {
 
 #[test]
 fn test_metadata_max_size_map_accepted() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     let mut metadata = map![&env];
     for i in 0..20 {
@@ -2549,7 +2549,7 @@ fn test_metadata_max_size_map_accepted() {
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_metadata_oversize_map_panics() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     let mut metadata = map![&env];
     for i in 0..21 {
@@ -2563,7 +2563,7 @@ fn test_metadata_oversize_map_panics() {
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_metadata_oversize_map_via_update_panics() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     client.register_issuer(&issuer, &map![&env]);
 
@@ -2579,7 +2579,7 @@ fn test_metadata_oversize_map_via_update_panics() {
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_metadata_empty_key_panics() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     let metadata = map![
         &env,
@@ -2591,7 +2591,7 @@ fn test_metadata_empty_key_panics() {
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_metadata_empty_value_panics() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     let metadata = map![
         &env,
@@ -2603,7 +2603,7 @@ fn test_metadata_empty_value_panics() {
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_metadata_empty_key_via_update_panics() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     client.register_issuer(&issuer, &map![&env]);
 
@@ -2617,7 +2617,7 @@ fn test_metadata_empty_key_via_update_panics() {
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_metadata_empty_value_via_update_panics() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     client.register_issuer(&issuer, &map![&env]);
 
@@ -2630,7 +2630,7 @@ fn test_metadata_empty_value_via_update_panics() {
 
 #[test]
 fn test_metadata_buyer_empty_map_accepted() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let buyer = Address::generate(&env);
     let result = client.register_buyer(&buyer, &map![&env]);
     assert!(result);
@@ -2641,7 +2641,7 @@ fn test_metadata_buyer_empty_map_accepted() {
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_register_buyer_rejects_oversized_metadata_key() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let buyer = Address::generate(&env);
     let long_key = "k".repeat((crate::MAX_METADATA_KEY_LEN + 1) as usize);
     let metadata = map![
@@ -2657,7 +2657,7 @@ fn test_register_buyer_rejects_oversized_metadata_key() {
 #[test]
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_register_issuer_rejects_oversized_metadata_value() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     let long_value = "v".repeat((crate::MAX_METADATA_VALUE_LEN + 1) as usize);
     let metadata = map![
@@ -2672,7 +2672,7 @@ fn test_register_issuer_rejects_oversized_metadata_value() {
 
 #[test]
 fn test_register_metadata_at_limits_accepted() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let buyer = Address::generate(&env);
     let key_prefix = "k".repeat((crate::MAX_METADATA_KEY_LEN - 2) as usize);
     let value = "v".repeat(crate::MAX_METADATA_VALUE_LEN as usize);
@@ -2691,7 +2691,7 @@ fn test_register_metadata_at_limits_accepted() {
 
 #[test]
 fn test_register_issuer_emits_event() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
 
     client.register_issuer(&issuer, &map![&env]);
@@ -2719,7 +2719,7 @@ fn test_register_issuer_emits_event() {
 
 #[test]
 fn test_register_buyer_emits_event() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let buyer = Address::generate(&env);
 
     client.register_buyer(&buyer, &map![&env]);
@@ -2923,7 +2923,7 @@ fn assert_verification_status_read_extends_ttl(
 
 #[test]
 fn test_get_verification_status_extends_ttl_for_pending_profile() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     // New profiles start Pending: registered but never verified (#130).
     client.register_issuer(&issuer, &map![&env]);
@@ -2981,7 +2981,7 @@ fn test_get_verification_status_extends_ttl_for_revoked_profile() {
 
 #[test]
 fn test_get_verification_status_unregistered_does_not_create_profile() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let unknown = Address::generate(&env);
     let contract_id = client.address.clone();
     let key = DataKey::Profile(unknown.clone());
@@ -3045,7 +3045,7 @@ fn test_get_admin_extends_instance_ttl() {
 
 #[test]
 fn test_update_metadata_extends_instance_ttl() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     client.register_issuer(
         &issuer,
@@ -3130,7 +3130,7 @@ fn prop_metadata_size_boundary_accepted_and_rejected() {
         .run(
             &(0u32..=25, valid_metadata_entries()),
             |(target_size, entries)| {
-                let (env, admin, client) = setup();
+                let (env, _admin, client) = setup();
                 let address = Address::generate(&env);
 
                 // Build a metadata map with exactly `target_size` entries.
@@ -3183,7 +3183,7 @@ fn prop_metadata_empty_key_or_value_always_rejected() {
     let mut runner = TestRunner::new(ProptestConfig::with_cases(10));
     runner
         .run(&metadata_entries_with_empty_field(), |entries| {
-            let (env, admin, client) = setup();
+            let (env, _admin, client) = setup();
             let address = Address::generate(&env);
 
             let metadata = build_metadata(&env, &entries);
@@ -3288,7 +3288,7 @@ fn run_batch_register_prop_test(is_buyer: bool) {
         .run(
             &batch_entry_plan(),
             |(unique_count, entry_indices, preregistered, metadata_per_entry)| {
-                let (env, admin, client) = setup();
+                let (env, _admin, client) = setup();
 
                 // Build the deterministic address pool.
                 let addresses: std::vec::Vec<Address> =
@@ -3401,7 +3401,7 @@ fn prop_batch_register_buyers_conserves_entries() {
 
 #[test]
 fn test_batch_register_issuers_exceeds_limit_leaves_state_clean() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let mut entries = Vec::new(&env);
     for _ in 0..51 {
@@ -3424,7 +3424,7 @@ fn test_batch_register_issuers_exceeds_limit_leaves_state_clean() {
 
 #[test]
 fn test_batch_register_buyers_exceeds_limit_leaves_state_clean() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let mut entries = Vec::new(&env);
     for _ in 0..51 {
@@ -3697,7 +3697,7 @@ fn test_verify_profile_rejects_caller_that_is_neither_admin_nor_verifier() {
 #[test]
 #[should_panic(expected = "Error(Contract, #9)")]
 fn test_verify_profile_rejects_non_admin_when_no_verifier_set() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     let issuer = Address::generate(&env);
     client.register_issuer(&issuer, &map![&env]);
     client.verify_profile(&Address::generate(&env), &issuer, &true);
@@ -3819,7 +3819,7 @@ fn test_verifier_cannot_revoke_or_reinstate() {
 #[test]
 #[should_panic(expected = "Error(Auth, InvalidAction)")]
 fn test_set_verifier_by_non_admin_panics() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     env.set_auths(&[]);
     client.set_verifier(&Address::generate(&env));
 }
@@ -3856,7 +3856,7 @@ fn test_verifier_survives_admin_transfer() {
 #[test]
 #[should_panic(expected = "Error(Auth")]
 fn test_upgrade_requires_admin_auth() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
     env.set_auths(&[]);
     client.upgrade(&BytesN::from_array(&env, &[0; 32]));
 }
@@ -4003,7 +4003,7 @@ fn test_verify_profile_repeated_call_is_an_audit_event() {
 // unique address is accounted for deterministically.
 #[test]
 fn test_batch_register_issuers_duplicate_accounting_and_event_counts() {
-    let (env, admin, client) = setup();
+    let (env, _admin, client) = setup();
 
     let existing = Address::generate(&env);
     let repeated = Address::generate(&env);

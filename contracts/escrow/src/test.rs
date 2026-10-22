@@ -346,7 +346,7 @@ fn test_constructor_emits_contract_initialized_event() {
     let pool = Address::generate(&env);
     let usdc = env.register(MockToken, ());
     let contract_id = env.register(EscrowContract, (admin.clone(), pool.clone(), usdc.clone()));
-    let client = EscrowContractClient::new(&env, &contract_id);
+    let _client = EscrowContractClient::new(&env, &contract_id);
 
     let events = env.events().all();
     let (contract, topics, _) = events
@@ -388,7 +388,7 @@ fn test_constructor_panics_when_pool_equals_usdc() {
     let pool = Address::generate(&env);
     let usdc = pool.clone();
     let contract_id = env.register(EscrowContract, (admin.clone(), pool.clone(), usdc.clone()));
-    let client = EscrowContractClient::new(&env, &contract_id);
+    let _client = EscrowContractClient::new(&env, &contract_id);
 }
 
 #[test]
@@ -400,7 +400,7 @@ fn test_constructor_panics_when_pool_equals_admin() {
     let pool = admin.clone();
     let usdc = env.register(MockToken, ());
     let contract_id = env.register(EscrowContract, (admin.clone(), pool.clone(), usdc.clone()));
-    let client = EscrowContractClient::new(&env, &contract_id);
+    let _client = EscrowContractClient::new(&env, &contract_id);
 }
 
 #[test]
@@ -412,7 +412,7 @@ fn test_constructor_panics_when_usdc_equals_admin() {
     let pool = Address::generate(&env);
     let _usdc = env.register(MockToken, ());
     let contract_id = env.register(EscrowContract, (admin.clone(), pool.clone(), admin.clone()));
-    let client = EscrowContractClient::new(&env, &contract_id);
+    let _client = EscrowContractClient::new(&env, &contract_id);
 }
 
 #[test]
