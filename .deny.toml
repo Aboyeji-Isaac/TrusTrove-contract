@@ -1,0 +1,51 @@
+[advisories]
+# Policy for handling security advisories
+# - Deny advisories by default unless explicitly allowed
+# - Allow listed advisories below with explanation
+# - CI will fail on any new advisory not explicitly ignored
+
+ignore = [
+  # RUSTSEC-2026-0009: time crate DoS vulnerability
+  # Originates from soroban-sdk 21.7.7 -> stellar-xdr -> time 0.3.36
+  # This advisory affects transitive dependencies only.
+  # Fix: Awaiting soroban-sdk to upgrade time >= 0.3.47
+  "RUSTSEC-2026-0009",
+]
+
+# License policy: enforce compatible licenses for all dependencies
+[[license]]
+# Allow these license identifiers (SPDX)
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+]
+
+# Deny these license identifiers
+deny = [
+  # Proprietary or non-open-source licenses
+  "Proprietary",
+]
+
+# Duplicate version policy: prevent multiple versions of the same crate
+[[duplicate_version]]
+# Policy: deny duplicate versions by default
+# This ensures reproducible builds and avoids confusion
+deny = true
+
+# Source policy: require all dependencies to have a source URL
+[[source]]
+# Require crates to have a source repository
+require_source = true
+
+# Verify that all sources are from trusted registries
+# ( Cargo defaults to crates.io; internal workspace paths are excluded )
+trusted_registries = [
+  "https://registry.npmjs.org/",
+  "https://pypi.org/simple/",
+]
+
+# Require a minimum distance between duplicate versions
+# (e.g., warn if two versions are within 10 releases of each other)
+max_duplicate_distance = 100
