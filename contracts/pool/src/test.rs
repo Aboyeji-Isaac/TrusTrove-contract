@@ -467,7 +467,10 @@ fn setup() -> TestEnv {
     let pool_id = Address::generate(&env);
 
     let invoice_id = env.register(RealInvoice, (admin.clone(), registry_id.clone()));
-    let escrow_id = env.register(RealEscrow, (admin.clone(), pool_id.clone(), usdc_id.clone()));
+    let escrow_id = env.register(
+        RealEscrow,
+        (admin.clone(), pool_id.clone(), usdc_id.clone()),
+    );
 
     let invoice = RealInvoiceClient::new(&env, &invoice_id);
     let escrow = RealEscrowClient::new(&env, &escrow_id);
@@ -541,7 +544,10 @@ fn deploy_pool_with_evicted_config() -> (Env, Address, PoolContractClient<'stati
     let invoice_id = env.register(RealInvoice, (admin.clone(), registry_id.clone()));
 
     let pool_id = Address::generate(&env);
-    let escrow_id = env.register(RealEscrow, (admin.clone(), pool_id.clone(), usdc_id.clone()));
+    let escrow_id = env.register(
+        RealEscrow,
+        (admin.clone(), pool_id.clone(), usdc_id.clone()),
+    );
 
     env.register_at(
         &pool_id,
@@ -1736,7 +1742,10 @@ fn test_default_max_utilization_in_stats() {
     let usdc_id = env.register(MockToken, ());
     let pool_id = Address::generate(&env);
     let invoice_id = env.register(RealInvoice, (admin.clone(), registry_id.clone()));
-    let escrow_id = env.register(RealEscrow, (admin.clone(), pool_id.clone(), usdc_id.clone()));
+    let escrow_id = env.register(
+        RealEscrow,
+        (admin.clone(), pool_id.clone(), usdc_id.clone()),
+    );
     env.register_at(
         &pool_id,
         PoolContract,
@@ -4174,7 +4183,10 @@ fn test_deposit_extends_instance_ttl_when_below_threshold() {
 
     let pool_id = Address::generate(&env);
     let invoice_id = env.register(RealInvoice, (admin.clone(), registry_id.clone()));
-    let escrow_id = env.register(RealEscrow, (admin.clone(), pool_id.clone(), usdc_id.clone()));
+    let escrow_id = env.register(
+        RealEscrow,
+        (admin.clone(), pool_id.clone(), usdc_id.clone()),
+    );
 
     env.register_at(
         &pool_id,
@@ -4530,7 +4542,10 @@ mod real_registry_integration {
         let pool_id = Address::generate(&env);
 
         let invoice_id_addr = env.register(RealInvoice, (admin.clone(), registry_id.clone()));
-        let escrow_id = env.register(RealEscrow, (admin.clone(), pool_id.clone(), usdc_id.clone()));
+        let escrow_id = env.register(
+            RealEscrow,
+            (admin.clone(), pool_id.clone(), usdc_id.clone()),
+        );
 
         let invoice = RealInvoiceClient::new(&env, &invoice_id_addr);
         let escrow = RealEscrowClient::new(&env, &escrow_id);
@@ -4846,7 +4861,10 @@ fn test_constructor_emits_pool_initialized_event() {
     // #827: the constructor emits `pool_initialized` as part of the
     // deployment transaction; the test env retains constructor events.
     let invoice_id = env.register(RealInvoice, (admin.clone(), registry_id.clone()));
-    let escrow_id = env.register(RealEscrow, (admin.clone(), pool_addr.clone(), usdc_id.clone()));
+    let escrow_id = env.register(
+        RealEscrow,
+        (admin.clone(), pool_addr.clone(), usdc_id.clone()),
+    );
     env.register_at(
         &pool_addr,
         PoolContract,
@@ -5764,7 +5782,10 @@ fn test_protocol_fee_storage_initialized_with_custom_treasury() {
 
     let pool_id = Address::generate(&env);
     let invoice_id = env.register(RealInvoice, (admin.clone(), registry_id.clone()));
-    let escrow_id = env.register(RealEscrow, (admin.clone(), pool_id.clone(), usdc_id.clone()));
+    let escrow_id = env.register(
+        RealEscrow,
+        (admin.clone(), pool_id.clone(), usdc_id.clone()),
+    );
     env.register_at(
         &pool_id,
         PoolContract,
@@ -6046,7 +6067,10 @@ fn test_share_metadata_is_scoped_to_the_pool_instance() {
     let pool_id = Address::generate(&env);
 
     let invoice_id = env.register(RealInvoice, (admin.clone(), registry_id.clone()));
-    let escrow_id = env.register(RealEscrow, (admin.clone(), pool_id.clone(), usdc_id.clone()));
+    let escrow_id = env.register(
+        RealEscrow,
+        (admin.clone(), pool_id.clone(), usdc_id.clone()),
+    );
 
     env.register_at(
         &pool_id,
@@ -6086,7 +6110,10 @@ fn test_constructor_rejects_empty_share_symbol() {
     let pool_id = Address::generate(&env);
 
     let invoice_id = env.register(RealInvoice, (admin.clone(), registry_id.clone()));
-    let escrow_id = env.register(RealEscrow, (admin.clone(), pool_id.clone(), usdc_id.clone()));
+    let escrow_id = env.register(
+        RealEscrow,
+        (admin.clone(), pool_id.clone(), usdc_id.clone()),
+    );
 
     // The empty-symbol guard runs inside the constructor, so the deployment
     // itself must fail with InvalidConfiguration (#15).

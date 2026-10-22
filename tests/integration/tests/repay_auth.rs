@@ -163,7 +163,10 @@ fn setup_repay_wiring() -> RepayWiring {
 
     let pool_id = Address::generate(&env);
     let invoice_addr = env.register(InvoiceContract, (admin.clone(), registry_id.clone()));
-    let escrow_id = env.register(EscrowContract, (admin.clone(), pool_id.clone(), usdc_id.clone()));
+    let escrow_id = env.register(
+        EscrowContract,
+        (admin.clone(), pool_id.clone(), usdc_id.clone()),
+    );
     let invoice = InvoiceContractClient::new(&env, &invoice_addr);
     invoice.add_supported_asset(&usdc_id);
     invoice.set_pool_contract(&pool_id);
@@ -186,15 +189,15 @@ fn setup_repay_wiring() -> RepayWiring {
         PoolContract,
         (
             admin.clone(),
-        invoice_addr.clone(),
-        escrow_id.clone(),
-        usdc_id.clone(),
-        registry_id.clone(),
-        admin.clone(),
-        DEFAULT_MIN_INITIAL_DEPOSIT,
-        String::from_str(&env, "TrusTrove USDC Pool Shares"),
-        String::from_str(&env, "TT-USDC"),
-        DEFAULT_SHARE_DECIMALS,
+            invoice_addr.clone(),
+            escrow_id.clone(),
+            usdc_id.clone(),
+            registry_id.clone(),
+            admin.clone(),
+            DEFAULT_MIN_INITIAL_DEPOSIT,
+            String::from_str(&env, "TrusTrove USDC Pool Shares"),
+            String::from_str(&env, "TT-USDC"),
+            DEFAULT_SHARE_DECIMALS,
         ),
     );
     pool.set_max_utilization(&admin, &10000);

@@ -21,7 +21,8 @@ pub const DEFAULT_MIN_INITIAL_DEPOSIT: u128 = 10_000_000;
 /// So every instance starts from these defaults. Threading per-asset metadata
 /// through `register_asset` is the follow-up that would make factory pools
 /// distinguishable in a wallet; until then, a deploy that needs its own
-/// metadata should initialize the pool directly and wire it up with
+/// metadata should deploy the pool directly — its `__constructor` takes the
+/// share metadata (issue #827) — and wire it up with
 /// `register_existing_pool`, which is also [`DEFAULT_MIN_INITIAL_DEPOSIT`]'s
 /// escape hatch.
 pub const DEFAULT_SHARE_NAME: &str = "TrusTrove Pool Shares";

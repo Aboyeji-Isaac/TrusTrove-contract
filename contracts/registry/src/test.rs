@@ -1005,7 +1005,6 @@ fn test_register_issuer_then_buyer_panics() {
     let issuer = Address::generate(&env);
     let metadata = map![&env];
 
-
     env.mock_auths(&[soroban_sdk::testutils::MockAuth {
         address: &issuer,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
@@ -1066,7 +1065,6 @@ fn test_register_buyer_then_issuer_panics() {
 
     let buyer = Address::generate(&env);
     let metadata = map![&env];
-
 
     env.mock_auths(&[soroban_sdk::testutils::MockAuth {
         address: &buyer,

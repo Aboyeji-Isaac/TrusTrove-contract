@@ -1,5 +1,5 @@
 #![no_std]
-// `PoolContract::initialize` takes 10 contract arguments (issue #826 SDK
+// `PoolContract::__constructor` takes 10 contract arguments (issue #826 SDK
 // upgrade): under soroban-sdk 23 the `#[contractimpl]`/`contractargs`
 // expansion re-emits that signature as generated code that inherits neither a
 // fn-level nor an impl-level `#[allow(clippy::too_many_arguments)]` (both were
@@ -26,7 +26,7 @@ pub use errors::*;
 pub use types::*;
 
 /// Default maximum utilization cap (in basis points) written at
-/// `initialize()` time. 8500 bps = 85%. This is the single source of truth for
+/// construction (`__constructor`) time. 8500 bps = 85%. This is the single source of truth for
 /// the default: `totals()`'s fallback reads the same constant, so the two call
 /// sites can never silently desync if the default is ever changed.
 pub const DEFAULT_MAX_UTILIZATION_BPS: u32 = 8500;
@@ -110,7 +110,7 @@ impl PoolContract {
     /// and for the same reason: under the `pool_factory` model each pool funds a
     /// different asset, so a deploy for an asset with other than 7 decimals
     /// supplies its own name, symbol and precision. Fixing it at
-    /// `initialize` also means a wallet never sees an LP's share balance
+    /// construction (`__constructor`) also means a wallet never sees an LP's share balance
     /// silently re-labelled under a different symbol.
     ///
     /// Protocol fee storage (`DataKey::ProtocolFeeBps`) is explicitly initialized to 0 bps
@@ -150,7 +150,7 @@ impl PoolContract {
     // One-shot wiring for a pool instance: six contract/admin references, the
     // treasury, the deposit floor and the three SEP-41 share-metadata values.
     // Bundling the metadata into a struct would clear the argument-count lint
-    // but would make the initializer's wiring less explicit at call sites.
+    // but would make the constructor's wiring less explicit at call sites.
     #[allow(clippy::too_many_arguments)]
     pub fn __constructor(
         env: Env,
@@ -196,8 +196,8 @@ impl PoolContract {
         // otherwise surface later as a failed token transfer inside
         // fund_invoice's escrow.lock call, since escrow.lock pulls funds
         // using escrow's own configured token client. This requires
-        // escrow_contract to already be initialized at the time pool.initialize
-        // is called.
+        // escrow_contract to already be constructed at the time the pool's
+        // __constructor runs.
         let args = Vec::new(&env);
         let escrow_funding_asset: Address =
             env.invoke_contract(&escrow_contract, &Symbol::new(&env, "get_usdc_asset"), args);
@@ -320,7 +320,7 @@ impl PoolContract {
     ///
     /// Shares are issued in the funding asset's base units, so
     /// `docs/SEP41_DESIGN.md` requires this to match the funding asset's own
-    /// decimals; `initialize` therefore takes a `share_decimals` per instance.
+    /// decimals; the `__constructor` therefore takes a `share_decimals` per instance.
     /// The `DEFAULT_SHARE_DECIMALS` fallback covers instances that predate it,
     /// which were all USDC pools.
     ///
@@ -345,7 +345,7 @@ impl PoolContract {
     }
 
     /// Returns this pool's LP share token name (SEP-41 `name`), as configured
-    /// in `initialize`.
+    /// by the `__constructor`.
     ///
     /// # Arguments
     /// * `env` - The Soroban environment.
@@ -354,7 +354,7 @@ impl PoolContract {
     /// No authorization is required.
     ///
     /// # Panics
-    /// * `NotInitialized` if `initialize` has not stored the name yet.
+    /// * `NotInitialized` if the `__constructor` has not stored the name yet.
     ///
     /// # Returns
     /// * `String` - The share token name.
@@ -371,7 +371,7 @@ impl PoolContract {
     }
 
     /// Returns this pool's LP share token symbol (SEP-41 `symbol`), as
-    /// configured in `initialize`.
+    /// configured by the `__constructor`.
     ///
     /// # Arguments
     /// * `env` - The Soroban environment.
@@ -380,7 +380,7 @@ impl PoolContract {
     /// No authorization is required.
     ///
     /// # Panics
-    /// * `NotInitialized` if `initialize` has not stored the symbol yet.
+    /// * `NotInitialized` if the `__constructor` has not stored the symbol yet.
     ///
     /// # Returns
     /// * `String` - The share token symbol.
@@ -630,7 +630,7 @@ impl PoolContract {
     /// Requires self-authorization from `lp` (via `lp.require_auth()`).
     ///
     /// # Panics
-    /// * `InvalidAmount` if `usdc_amount` is zero or if initial deposit is below this instance's configured minimum (see `initialize`'s `min_initial_deposit`).
+    /// * `InvalidAmount` if `usdc_amount` is zero or if initial deposit is below this instance's configured minimum (see the `__constructor`'s `min_initial_deposit`).
     /// * `MinimumDeposit` if the deposit is too small to mint at least 1 share
     ///   at the current share price (prevents 0-share dust deposits).
     /// * `Overflow` if `usdc_amount * total_shares` would overflow `u128`

@@ -1,8 +1,7 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, xdr::ToXdr, Address, BytesN, Env, String, Symbol,
-    Vec,
+    contract, contractimpl, panic_with_error, xdr::ToXdr, Address, BytesN, Env, String, Symbol, Vec,
 };
 
 mod constants;
@@ -194,7 +193,7 @@ impl PoolFactoryContract {
     /// # Panics
     /// * `NotInitialized` if the factory has not been initialized.
     /// * `AssetAlreadyRegistered` if the asset is already registered.
-    /// * `InvalidPool` if `pool_address` does not expose a pool initialized
+    /// * `InvalidPool` if `pool_address` does not expose a pool constructed
     ///   for `asset`.
     ///
     /// # Returns

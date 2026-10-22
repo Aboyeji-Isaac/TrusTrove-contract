@@ -62,7 +62,13 @@ contracts. Deployed addresses are saved to `.deployed-addresses`.
 
 To hotfix a single contract without rerunning the full pipeline, pass
 `--only <contract>` where `<contract>` is one of:
-`registry`, `invoice`, `escrow_usdc`, `pool_usdc`, `escrow_xlm`, `pool_xlm`.
+`registry`, `invoice`, `escrow_usdc`, `pool_usdc`, `usdc_pair`,
+`escrow_xlm`, `pool_xlm`, `xlm_pair`.
+
+Because escrow and pool each receive the OTHER's address in their
+constructor (issue #827), they are constructor-linked: `--only escrow_usdc`
+and `--only pool_usdc` are automatically promoted to `usdc_pair` (the XLM
+equivalents to `xlm_pair`) so both halves of a pair are always consistent.
 
 ```bash
 # Redeploy only the invoice contract, keeping all other addresses intact:
@@ -70,9 +76,13 @@ bash scripts/deploy.sh --only invoice
 ```
 
 When `--only` is passed, the script:
-1. Clears only the saved address and init flag for the targeted contract.
+1. Clears the saved address(es) for the targeted step — for a pool/escrow
+   target, the whole pair, its persisted deploy salt, and the invoice
+   wiring markers that point at the replaced pair.
 2. Loads all other saved addresses from `.deployed-addresses` for cross-contract references.
-3. Runs `deploy_contract` + `invoke_init` only for the specified contract.
+3. Runs `deploy_contract` (which atomically runs the contract's
+   `__constructor`) only for the targeted step(s), plus any wiring calls
+   that must be re-applied.
 4. Generates `deployments.json` and updates `README.md` at the end (same as a full deploy).
 
 ### 3. Post-Deploy Wiring
@@ -88,26 +98,42 @@ Paste the values into `trusttrove-app/.env.local`.
 
 ## Contract Wiring Order
 
-The deploy script initializes contracts in a specific order
-because each contract references others. Below is a detailed wiring table.
+Since issue #827 each contract's configuration is seeded by its protocol
+`__constructor`, which runs inside the deploy transaction itself — there is
+no separate `initialize` step. The deploy script still runs in a specific
+order because each constructor references other contracts. Below is the
+full wiring table.
 
 ### Wiring Table
 
-| Step | Setter / Initializer | Source Address | Destination Contract | Required Order |
-|------|----------------------|----------------|----------------------|----------------|
-| 1 | `registry.initialize()` | Deployer admin | — | First — no dependencies |
-| 2 | `invoice.initialize()` | Deployer admin | Registry contract | After registry is live |
-| 3 | `escrow_usdc.initialize()` | Deployer admin | Pool contract, USDC asset | After pool is deployed |
-| 4 | `pool_usdc.initialize()` | Deployer admin | Invoice contract, Escrow contract, USDC asset | After invoice + escrow are live |
+| Step | Constructor / Setter | Auth | Constructor Args / Destination | Required Order |
+|------|----------------------|------|-------------------------------|----------------|
+| 1 | `registry.__constructor()` (deploy) | Deployer admin | — | First — no dependencies |
+| 2 | `invoice.__constructor()` (deploy) | Deployer admin | Registry contract | After registry is deployed |
+| 3 | `escrow_usdc.__constructor()` (deploy) | Deployer admin | Pool contract (pre-computed address, see note), USDC asset | Before pool_usdc — it is constructed against the pool's *predicted* address |
+| 4 | `pool_usdc.__constructor()` (deploy) | Deployer admin | Invoice contract, Escrow contract, USDC asset, registry, treasury, share metadata | After escrow is deployed; deployed at the salt-derived address escrow was constructed against |
 | 5 | `escrow_usdc.set_invoice_contract()` (optional, #997) | Escrow admin | — | After escrow + pool are live (defense-in-depth pin) |
-| 6 | `invoice.set_pool_contract()` | Invoice admin | Pool contract | After pool is initialized |
-| 7 | `invoice.set_escrow_contract()` | Invoice admin | Escrow contract | After escrow is initialized (prevents `InvoiceError::NotFound`) |
+| 6 | `invoice.set_pool_contract()` | Invoice admin | Pool contract | After pool is deployed |
+| 7 | `invoice.set_escrow_contract()` | Invoice admin | Escrow contract | After escrow is deployed (prevents `InvoiceError::NotFound`) |
 | 8 | `invoice.add_supported_asset(usdc)` | Invoice admin | — | After escrow is wired (otherwise `create` rejects with `UnsupportedAsset`) |
 | 9 | `invoice.add_supported_asset(xlm)` (optional) | Invoice admin | — | After escrow is wired (EXPERIMENTAL) |
 | 10 | `invoice.set_agent_registry_contract()` (optional) | Invoice admin | Agent registry contract | Only when `AGENT_REGISTRY_CONTRACT` is set (see AGENT_REGISTRY_WIRING) |
 
-The registry must be deployed first because all other contracts
-call `is_verified()` on it during initialization.
+Steps 3–4 resolve the escrow↔pool circular constructor dependency without a
+separate init transaction: the deploy script persists a random 32-byte salt
+(`pool_usdc_salt` / `pool_xlm_salt` in `.deployed-addresses`), computes the
+pool's future address from it (`stellar contract id wasm --salt … --source-account …`),
+constructs the escrow against that prediction, then deploys the pool *at the
+same salt* — so the pool lands exactly on the address the escrow was
+constructed with. The derivation is exact because the stellar CLI computes a
+constructor-deploy's contract id from (deployer, salt) only; constructor
+arguments do not enter the address preimage. A resumed run reloads the
+persisted salt and reconstructs the identical prediction; the script verifies
+the deployed pool address matches the prediction and aborts otherwise.
+
+The registry must be deployed first because the invoice constructor wires it
+and pool flows call `is_verified()` on it, so the deploy script passes its
+address as a constructor argument.
 
 ### Post-Deploy Verification
 
@@ -115,7 +141,7 @@ After `deploy.sh` completes, verify all stored references are correctly
 wired with the following read-only calls:
 
 ```bash
-# Verify registry is initialized and responsive
+# Verify registry is deployed (constructed) and responsive
 stellar contract invoke --id $REGISTRY_ID \
   --source $DEPLOYER_ACCOUNT --network testnet \
   -- get_admin
@@ -190,10 +216,15 @@ for authorization by configuring its signer weights and thresholds; Soroban
 then checks the account's configured threshold when the admin authorizes a
 contract call. Configure this before
 deploying contracts and pass the multisig account's `G...` address as `admin`
-to each `initialize()` call. Keep the individual signer secret keys separate.
+to each contract's `__constructor` (i.e. as the deploy-time constructor
+argument). Keep the individual signer secret keys separate.
 The bundled deployment scripts currently set admin to the deployer's address;
-for a multisig deployment, initialize each contract with the multisig address
-and submit those initialization transactions with the multisig threshold met.
+for a multisig deployment, construct each contract with the multisig address.
+Because deploy and initialization are now one atomic transaction (issue
+#827), that single transaction must carry BOTH the deployer signature and
+the admin authorization satisfying the multisig threshold — assemble it with
+`--build-only` and collect the additional signatures (e.g. via Stellar
+Laboratory) before submitting.
 
 ### Testnet Example: 3-of-5
 
@@ -215,9 +246,9 @@ signer weight to `0` so its own key does not count as one of the five signers.
 The initial signer/threshold update must still be authorized using the
 account's current settings. After setup,
 record the admin account's `G...` address and use it as the admin for each
-contract initialization. When invoking manually or adapting deployment
+contract's constructor. When invoking manually or adapting deployment
 automation, pass this address as `--admin` instead of the deployer address and
-submit the initialization transaction with the configured threshold. Subsequent
+submit each deploy transaction with the configured threshold. Subsequent
 admin-only invocations, including contract upgrades, must likewise carry
 authorization satisfying the 3-of-5 threshold.
 

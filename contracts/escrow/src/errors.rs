@@ -20,7 +20,8 @@ pub enum EscrowError {
     NotInitialized = 6,
     /// Returned when releasing funds to a recipient that is invalid (e.g., not the invoice issuer).
     InvalidRecipient = 7,
-    /// Returned when attempting to initialize with colliding addresses (e.g., pool_contract == usdc_asset).
+    /// Returned when constructing (`__constructor`, issue #827) with colliding
+    /// addresses (e.g., pool_contract == usdc_asset).
     InvalidConfig = 8,
     /// Returned when `set_timeout_window` is given a zero window or one above `MAX_TIMEOUT_WINDOW_SECONDS`.
     InvalidTimeoutWindow = 9,

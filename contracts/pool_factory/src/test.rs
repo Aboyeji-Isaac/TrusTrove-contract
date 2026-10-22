@@ -54,8 +54,10 @@ fn setup() -> TestEnv {
     // Real invoice and escrow contracts: the pool's constructor cross-checks
     // the escrow's configured asset and the factory reads the invoice's
     // registry, so both have to be real contracts for the round trip to work.
-    let invoice_id =
-        env.register(trusttrove_invoice::InvoiceContract, (admin.clone(), registry_id.clone()));
+    let invoice_id = env.register(
+        trusttrove_invoice::InvoiceContract,
+        (admin.clone(), registry_id.clone()),
+    );
 
     let escrow_id = new_escrow(&env, &admin, &asset);
 

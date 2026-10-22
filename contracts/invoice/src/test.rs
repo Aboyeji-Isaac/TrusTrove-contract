@@ -1674,7 +1674,11 @@ fn test_trigger_default_stranger_panics() {
             sub_invokes: &[],
         },
     }]);
-    env.register_at(&contract_id, InvoiceContract, (admin.clone(), registry_id.clone()));
+    env.register_at(
+        &contract_id,
+        InvoiceContract,
+        (admin.clone(), registry_id.clone()),
+    );
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     let usdc = Address::generate(&env);
@@ -2481,7 +2485,11 @@ fn test_mark_shipped_stranger_panics() {
             sub_invokes: &[],
         },
     }]);
-    env.register_at(&contract_id, InvoiceContract, (admin.clone(), registry_id.clone()));
+    env.register_at(
+        &contract_id,
+        InvoiceContract,
+        (admin.clone(), registry_id.clone()),
+    );
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     // Create invoice as issuer
@@ -2574,7 +2582,11 @@ fn test_expire_listing_stranger_panics() {
             sub_invokes: &[],
         },
     }]);
-    env.register_at(&contract_id, InvoiceContract, (admin.clone(), registry_id.clone()));
+    env.register_at(
+        &contract_id,
+        InvoiceContract,
+        (admin.clone(), registry_id.clone()),
+    );
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     let usdc = Address::generate(&env);
@@ -2862,7 +2874,11 @@ fn test_repay_fails_no_auth() {
             sub_invokes: &[],
         },
     }]);
-    env.register_at(&contract_id, InvoiceContract, (admin.clone(), registry_id.clone()));
+    env.register_at(
+        &contract_id,
+        InvoiceContract,
+        (admin.clone(), registry_id.clone()),
+    );
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     client.add_supported_asset(&usdc);
@@ -4824,7 +4840,11 @@ fn setup_no_mock_auth() -> (
             sub_invokes: &[],
         },
     }]);
-    env.register_at(&contract_id, InvoiceContract, (admin.clone(), registry_id.clone()));
+    env.register_at(
+        &contract_id,
+        InvoiceContract,
+        (admin.clone(), registry_id.clone()),
+    );
     let client = InvoiceContractClient::new(&env, &contract_id);
 
     // Funding asset must be allow-listed by the admin (explicit signature).
