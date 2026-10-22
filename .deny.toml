@@ -43,6 +43,13 @@ confidence-threshold = 0.8
 # The current lockfile resolves to a single version of every external crate,
 # so this stays a hard gate.
 multiple-versions = "deny"
+# Pre-existing transitive duplicates that cannot be unified without an
+# upstream release; skipping them keeps the check failing on anything new.
+skip = [
+  # soroban-sdk -> bytes-lit still requires syn 2, while a newer dependency
+  # tree resolves syn 3. Both are proc-macro-only builds.
+  { crate = "syn@2.0.117", reason = "pinned by bytes-lit via soroban-sdk; syn 3 is also in the graph" },
+]
 # Wildcard requirements are allowed only because every workspace crate is
 # referenced by path with no version requirement (`{ path = "../pause" }` or
 # `{ workspace = true }`), which cargo-deny reports as `*`. First-party
