@@ -165,11 +165,9 @@ fn setup() -> Setup {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register(InvoiceContract, ());
-    let client = InvoiceContractClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
-    client.initialize(&admin, &registry_id);
+    let contract_id = env.register(InvoiceContract, (admin.clone(), registry_id.clone()));
+    let client = InvoiceContractClient::new(&env, &contract_id);
 
     let usdc_asset = env.register(MockToken, ());
     client.add_supported_asset(&usdc_asset);
@@ -215,11 +213,9 @@ fn setup_with_admin() -> SetupWithAdmin {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register(InvoiceContract, ());
-    let client = InvoiceContractClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
-    client.initialize(&admin, &registry_id);
+    let contract_id = env.register(InvoiceContract, (admin.clone(), registry_id.clone()));
+    let client = InvoiceContractClient::new(&env, &contract_id);
 
     let usdc_asset = env.register(MockToken, ());
     client.add_supported_asset(&usdc_asset);
@@ -896,11 +892,9 @@ fn test_create_fails_unverified_issuer() {
     let buyer = Address::generate(&env);
     registry_client.register(&buyer);
 
-    let contract_id = env.register(InvoiceContract, ());
-    let client = InvoiceContractClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
-    client.initialize(&admin, &registry_id);
+    let contract_id = env.register(InvoiceContract, (admin.clone(), registry_id.clone()));
+    let client = InvoiceContractClient::new(&env, &contract_id);
 
     let usdc_asset = env.register(MockToken, ());
     client.add_supported_asset(&usdc_asset);
@@ -923,11 +917,9 @@ fn test_create_fails_unverified_buyer() {
     let buyer = Address::generate(&env);
     registry_client.register(&issuer);
 
-    let contract_id = env.register(InvoiceContract, ());
-    let client = InvoiceContractClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
-    client.initialize(&admin, &registry_id);
+    let contract_id = env.register(InvoiceContract, (admin.clone(), registry_id.clone()));
+    let client = InvoiceContractClient::new(&env, &contract_id);
 
     let usdc_asset = env.register(MockToken, ());
     client.add_supported_asset(&usdc_asset);
@@ -1671,21 +1663,19 @@ fn test_trigger_default_stranger_panics() {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register(InvoiceContract, ());
-    let client = InvoiceContractClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
-
+    let contract_id = Address::generate(&env);
     env.mock_auths(&[soroban_sdk::testutils::MockAuth {
         address: &admin,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &contract_id,
-            fn_name: "initialize",
+            fn_name: "__constructor",
             args: (admin.clone(), registry_id.clone()).into_val(&env),
             sub_invokes: &[],
         },
     }]);
-    client.initialize(&admin, &registry_id);
+    env.register_at(&contract_id, InvoiceContract, (admin.clone(), registry_id.clone()));
+    let client = InvoiceContractClient::new(&env, &contract_id);
 
     let usdc = Address::generate(&env);
     client.add_supported_asset(&usdc);
@@ -2406,16 +2396,24 @@ fn test_set_agent_registry_contract_rejects_conflicting_addresses() {
 }
 
 #[test]
-fn test_initialize_rejects_conflicting_registry_address() {
+#[should_panic(expected = "Error(Contract, #26)")]
+fn test_constructor_rejects_registry_equal_to_admin() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register(InvoiceContract, ());
-    let client = InvoiceContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
+    // registry == admin: the constructor aborts, so the deployment fails.
+    env.register(InvoiceContract, (admin.clone(), admin));
+}
 
-    for registry in [admin.clone(), contract_id.clone()] {
-        assert!(client.try_initialize(&admin, &registry).is_err());
-    }
+#[test]
+#[should_panic(expected = "Error(Contract, #26)")]
+fn test_constructor_rejects_registry_equal_to_invoice_contract() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let contract_id = Address::generate(&env);
+    // registry == the invoice instance itself: same abort-at-deploy story.
+    env.register_at(&contract_id, InvoiceContract, (admin, contract_id.clone()));
 }
 
 #[test]
@@ -2468,25 +2466,23 @@ fn test_mark_shipped_stranger_panics() {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register(InvoiceContract, ());
-    let client = InvoiceContractClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
+    let contract_id = Address::generate(&env);
     let usdc = Address::generate(&env);
     let due_date = env.ledger().timestamp() + DEFAULT_DUE_OFFSET;
     let pool = mock_pool_with_asset(&env, &usdc);
 
-    // Initialize as admin
     env.mock_auths(&[soroban_sdk::testutils::MockAuth {
         address: &admin,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &contract_id,
-            fn_name: "initialize",
+            fn_name: "__constructor",
             args: (admin.clone(), registry_id.clone()).into_val(&env),
             sub_invokes: &[],
         },
     }]);
-    client.initialize(&admin, &registry_id);
+    env.register_at(&contract_id, InvoiceContract, (admin.clone(), registry_id.clone()));
+    let client = InvoiceContractClient::new(&env, &contract_id);
 
     // Create invoice as issuer
     env.mock_auths(&[soroban_sdk::testutils::MockAuth {
@@ -2567,21 +2563,19 @@ fn test_expire_listing_stranger_panics() {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register(InvoiceContract, ());
-    let client = InvoiceContractClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
-
+    let contract_id = Address::generate(&env);
     env.mock_auths(&[soroban_sdk::testutils::MockAuth {
         address: &admin,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &contract_id,
-            fn_name: "initialize",
+            fn_name: "__constructor",
             args: (admin.clone(), registry_id.clone()).into_val(&env),
             sub_invokes: &[],
         },
     }]);
-    client.initialize(&admin, &registry_id);
+    env.register_at(&contract_id, InvoiceContract, (admin.clone(), registry_id.clone()));
+    let client = InvoiceContractClient::new(&env, &contract_id);
 
     let usdc = Address::generate(&env);
     let due_date = env.ledger().timestamp() + DEFAULT_DUE_OFFSET;
@@ -2854,24 +2848,22 @@ fn test_repay_fails_no_auth() {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register(InvoiceContract, ());
-    let client = InvoiceContractClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
+    let contract_id = Address::generate(&env);
     let usdc = Address::generate(&env);
     let due_date = env.ledger().timestamp() + DEFAULT_DUE_OFFSET;
 
-    // Initialize as admin
     env.mock_auths(&[soroban_sdk::testutils::MockAuth {
         address: &admin,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &contract_id,
-            fn_name: "initialize",
+            fn_name: "__constructor",
             args: (admin.clone(), registry_id.clone()).into_val(&env),
             sub_invokes: &[],
         },
     }]);
-    client.initialize(&admin, &registry_id);
+    env.register_at(&contract_id, InvoiceContract, (admin.clone(), registry_id.clone()));
+    let client = InvoiceContractClient::new(&env, &contract_id);
 
     client.add_supported_asset(&usdc);
 
@@ -3709,28 +3701,6 @@ fn test_create_fails_counter_overflow() {
 
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
-fn test_create_fails_uninitialized_registry() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let registry_id = env.register(MockRegistry, ());
-    let registry_client = MockRegistryClient::new(&env, &registry_id);
-
-    let issuer = Address::generate(&env);
-    let buyer = Address::generate(&env);
-    registry_client.register(&issuer);
-    registry_client.register(&buyer);
-
-    let contract_id = env.register(InvoiceContract, ());
-    let client = InvoiceContractClient::new(&env, &contract_id);
-
-    let due_date = env.ledger().timestamp() + DEFAULT_DUE_OFFSET;
-    let usdc = Address::generate(&env);
-    client.create(&issuer, &buyer, &DEFAULT_FACE_VALUE, &due_date, &usdc);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #2)")]
 fn test_get_funding_terms_unknown_panics() {
     let (env, client, _, _, _, _) = setup();
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
@@ -3751,11 +3721,9 @@ fn test_create_fails_missing_counter() {
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register(InvoiceContract, ());
-    let client = InvoiceContractClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
-    client.initialize(&admin, &registry_id);
+    let contract_id = env.register(InvoiceContract, (admin.clone(), registry_id.clone()));
+    let client = InvoiceContractClient::new(&env, &contract_id);
 
     let usdc = Address::generate(&env);
     client.add_supported_asset(&usdc);
@@ -4107,8 +4075,16 @@ fn test_get_funded_amount_missing_invoice_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_funded_amount_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register(InvoiceContract, ());
+    env.mock_all_auths();
+    let registry_id = env.register(MockRegistry, ());
+    let contract_id = env.register(InvoiceContract, (Address::generate(&env), registry_id));
     let client = InvoiceContractClient::new(&env, &contract_id);
+    // #827: a deployed invoice is always constructed; the only way to
+    // observe the #20 guard post-deploy is instance-storage eviction,
+    // which the removal below simulates.
+    env.as_contract(&contract_id, || {
+        env.storage().instance().remove(&crate::DataKey::Admin);
+    });
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_funded_amount(&fake_id);
 }
@@ -4133,8 +4109,16 @@ fn test_get_missing_invoice_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_issuer_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register(InvoiceContract, ());
+    env.mock_all_auths();
+    let registry_id = env.register(MockRegistry, ());
+    let contract_id = env.register(InvoiceContract, (Address::generate(&env), registry_id));
     let client = InvoiceContractClient::new(&env, &contract_id);
+    // #827: a deployed invoice is always constructed; the only way to
+    // observe the #20 guard post-deploy is instance-storage eviction,
+    // which the removal below simulates.
+    env.as_contract(&contract_id, || {
+        env.storage().instance().remove(&crate::DataKey::Admin);
+    });
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_issuer(&fake_id);
 }
@@ -4143,8 +4127,16 @@ fn test_get_issuer_uninitialized_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_face_value_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register(InvoiceContract, ());
+    env.mock_all_auths();
+    let registry_id = env.register(MockRegistry, ());
+    let contract_id = env.register(InvoiceContract, (Address::generate(&env), registry_id));
     let client = InvoiceContractClient::new(&env, &contract_id);
+    // #827: a deployed invoice is always constructed; the only way to
+    // observe the #20 guard post-deploy is instance-storage eviction,
+    // which the removal below simulates.
+    env.as_contract(&contract_id, || {
+        env.storage().instance().remove(&crate::DataKey::Admin);
+    });
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_face_value(&fake_id);
 }
@@ -4153,8 +4145,16 @@ fn test_get_face_value_uninitialized_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_funding_asset_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register(InvoiceContract, ());
+    env.mock_all_auths();
+    let registry_id = env.register(MockRegistry, ());
+    let contract_id = env.register(InvoiceContract, (Address::generate(&env), registry_id));
     let client = InvoiceContractClient::new(&env, &contract_id);
+    // #827: a deployed invoice is always constructed; the only way to
+    // observe the #20 guard post-deploy is instance-storage eviction,
+    // which the removal below simulates.
+    env.as_contract(&contract_id, || {
+        env.storage().instance().remove(&crate::DataKey::Admin);
+    });
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_funding_asset(&fake_id);
 }
@@ -4163,8 +4163,16 @@ fn test_get_funding_asset_uninitialized_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_discount_bps_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register(InvoiceContract, ());
+    env.mock_all_auths();
+    let registry_id = env.register(MockRegistry, ());
+    let contract_id = env.register(InvoiceContract, (Address::generate(&env), registry_id));
     let client = InvoiceContractClient::new(&env, &contract_id);
+    // #827: a deployed invoice is always constructed; the only way to
+    // observe the #20 guard post-deploy is instance-storage eviction,
+    // which the removal below simulates.
+    env.as_contract(&contract_id, || {
+        env.storage().instance().remove(&crate::DataKey::Admin);
+    });
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_discount_bps(&fake_id);
 }
@@ -4173,8 +4181,16 @@ fn test_get_discount_bps_uninitialized_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_status_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register(InvoiceContract, ());
+    env.mock_all_auths();
+    let registry_id = env.register(MockRegistry, ());
+    let contract_id = env.register(InvoiceContract, (Address::generate(&env), registry_id));
     let client = InvoiceContractClient::new(&env, &contract_id);
+    // #827: a deployed invoice is always constructed; the only way to
+    // observe the #20 guard post-deploy is instance-storage eviction,
+    // which the removal below simulates.
+    env.as_contract(&contract_id, || {
+        env.storage().instance().remove(&crate::DataKey::Admin);
+    });
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_status(&fake_id);
 }
@@ -4183,8 +4199,16 @@ fn test_get_status_uninitialized_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register(InvoiceContract, ());
+    env.mock_all_auths();
+    let registry_id = env.register(MockRegistry, ());
+    let contract_id = env.register(InvoiceContract, (Address::generate(&env), registry_id));
     let client = InvoiceContractClient::new(&env, &contract_id);
+    // #827: a deployed invoice is always constructed; the only way to
+    // observe the #20 guard post-deploy is instance-storage eviction,
+    // which the removal below simulates.
+    env.as_contract(&contract_id, || {
+        env.storage().instance().remove(&crate::DataKey::Admin);
+    });
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get(&fake_id);
 }
@@ -4215,8 +4239,16 @@ fn test_get_buyer_missing_invoice_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_buyer_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register(InvoiceContract, ());
+    env.mock_all_auths();
+    let registry_id = env.register(MockRegistry, ());
+    let contract_id = env.register(InvoiceContract, (Address::generate(&env), registry_id));
     let client = InvoiceContractClient::new(&env, &contract_id);
+    // #827: a deployed invoice is always constructed; the only way to
+    // observe the #20 guard post-deploy is instance-storage eviction,
+    // which the removal below simulates.
+    env.as_contract(&contract_id, || {
+        env.storage().instance().remove(&crate::DataKey::Admin);
+    });
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_buyer(&fake_id);
 }
@@ -4243,8 +4275,16 @@ fn test_get_due_date_missing_invoice_panics() {
 #[should_panic(expected = "Error(Contract, #20)")]
 fn test_get_due_date_uninitialized_panics() {
     let env = Env::default();
-    let contract_id = env.register(InvoiceContract, ());
+    env.mock_all_auths();
+    let registry_id = env.register(MockRegistry, ());
+    let contract_id = env.register(InvoiceContract, (Address::generate(&env), registry_id));
     let client = InvoiceContractClient::new(&env, &contract_id);
+    // #827: a deployed invoice is always constructed; the only way to
+    // observe the #20 guard post-deploy is instance-storage eviction,
+    // which the removal below simulates.
+    env.as_contract(&contract_id, || {
+        env.storage().instance().remove(&crate::DataKey::Admin);
+    });
     let fake_id = BytesN::from_array(&env, &[0u8; 32]);
     client.get_due_date(&fake_id);
 }
@@ -4773,20 +4813,19 @@ fn setup_no_mock_auth() -> (
     registry_client.register(&issuer);
     registry_client.register(&buyer);
 
-    let contract_id = env.register(InvoiceContract, ());
-    let client = InvoiceContractClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
+    let contract_id = Address::generate(&env);
     env.mock_auths(&[soroban_sdk::testutils::MockAuth {
         address: &admin,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &contract_id,
-            fn_name: "initialize",
+            fn_name: "__constructor",
             args: (admin.clone(), registry_id.clone()).into_val(&env),
             sub_invokes: &[],
         },
     }]);
-    client.initialize(&admin, &registry_id);
+    env.register_at(&contract_id, InvoiceContract, (admin.clone(), registry_id.clone()));
+    let client = InvoiceContractClient::new(&env, &contract_id);
 
     // Funding asset must be allow-listed by the admin (explicit signature).
     let usdc = env.register(MockToken, ());
