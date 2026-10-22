@@ -1,50 +1,65 @@
+# Cargo dependency policy for the Soroban Rust workspace (issue #1025).
+#
+# Enforced in CI by `cargo deny check` (see .github/workflows/ci.yml).
+# Any violation fails the build unless it is explicitly listed below.
+#
+# Sections and keys follow the cargo-deny configuration schema:
+# https://embarkstudios.github.io/cargo-deny/
+
 [advisories]
-# Policy for handling security advisories
-# - Deny advisories by default unless explicitly allowed
-# - Allow listed advisories below with explanation
-# - CI will fail on any new advisory not explicitly ignored
+# All RUSTSEC advisories are denied unless explicitly ignored here.
 ignore = [
-  # RUSTSEC-2026-0009: time crate DoS vulnerability
-  # Originates from soroban-sdk 21.7.7 -> stellar-xdr -> time 0.3.36
-  # This advisory affects transitive dependencies only.
-  # Fix: Awaiting soroban-sdk to upgrade time >= 0.3.47
-  "RUSTSEC-2026-0009",
+  # time 0.3.36 denial-of-service, pulled in transitively through
+  # soroban-sdk -> stellar-xdr -> time. Not reachable from this workspace's
+  # contract code. Remove once soroban-sdk upgrades to time >= 0.3.47.
+  { id = "RUSTSEC-2026-0009", reason = "transitive via soroban-sdk; awaiting upstream time upgrade" },
 ]
 
-# License policy: enforce compatible licenses for all dependencies
-[license]
-# Allow these license identifiers (SPDX)
+[licenses]
+# Every license in the dependency graph must match one of these. Licenses not
+# listed here are denied. The current graph (184 registry crates) resolves to
+# MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause, BSD-3-Clause,
+# Zlib, Unicode-3.0, 0BSD or Unlicense, including legacy "MIT/Apache-2.0"
+# expressions.
 allow = [
   "MIT",
   "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
   "BSD-2-Clause",
   "BSD-3-Clause",
+  "Zlib",
+  "Unicode-3.0",
+  "0BSD",
+  "Unlicense",
+]
+confidence-threshold = 0.8
+
+[bans]
+# Deny newly introduced duplicate versions of the same crate. The duplicates
+# below already exist in the lockfile and are all transitive; they are skipped
+# explicitly so that only *new* duplicates fail CI.
+multiple-versions = "deny"
+# Deny `*` version requirements, which make builds non-reproducible.
+wildcards = "deny"
+# Workspace members are first-party code, not subject to the ban list.
+allow-workspace = true
+skip = [
+  { crate = "base64@0.13.1", reason = "held back by a transitive dependency; newer base64 0.22 is used elsewhere" },
+  { crate = "getrandom@0.2.17", reason = "transitive; sibling crates still pin 0.2" },
+  { crate = "getrandom@0.3.4", reason = "transitive; sibling crates still pin 0.3" },
+  { crate = "hashbrown@0.12.3", reason = "transitive; older indexmap 1.x still uses it" },
+  { crate = "indexmap@1.9.3", reason = "transitive; held back by an older dependency" },
+  { crate = "r-efi@5.3.0", reason = "transitive; getrandom 0.2/0.3 still pin 5.x" },
+  { crate = "rand@0.8.7", reason = "transitive; older signer crates still pin 0.8" },
+  { crate = "rand_chacha@0.3.1", reason = "transitive; follows rand 0.8" },
+  { crate = "rand_core@0.6.4", reason = "transitive; follows rand 0.8" },
+  { crate = "syn@2.0.117", reason = "transitive; procedural macros still pin syn 2.x" },
 ]
 
-# Deny these license identifiers
-deny = [
-  # Proprietary or non-open-source licenses
-  "Proprietary",
-]
-
-# Duplicate version policy: prevent multiple versions of the same crate
-[duplicate_version]
-# Policy: deny duplicate versions by default
-# This ensures reproducible builds and avoids confusion
-deny = true
-
-# Source policy: require all dependencies to have a source URL
-[source]
-# Require crates to have a source repository
-require_source = true
-
-# Verify that all sources are from trusted registries
-# (Cargo defaults to crates.io; internal workspace paths are excluded)
-trusted_registries = [
-  "https://registry.npmjs.org/",
-  "https://pypi.org/simple/",
-]
-
-# Require a minimum distance between duplicate versions
-# (e.g., warn if two versions are within 10 releases of each other)
-max_duplicate_distance = 100
+[sources]
+# Only the crates.io registry (plus in-workspace path dependencies) is allowed;
+# no git or alternative-registry sources.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
