@@ -10,7 +10,8 @@ smart contracts on Stellar.
 |------|---------|---------|
 | Rust | 1.85.0 | `rustup toolchain install 1.85.0` |
 | wasm32v1-none target | — | `rustup target add wasm32v1-none --toolchain 1.85.0` |
-| Stellar CLI | latest | See [Stellar CLI docs](https://github.com/stellar/stellar-cli) |
+| Soroban SDK | 23.5.3 (protocol 23) | Pinned in `Cargo.toml`; nothing to install |
+| Stellar CLI | v23 or newer (protocol 23 support) | See [Stellar CLI docs](https://github.com/stellar/stellar-cli) |
 | jq | latest | Required by `scripts/maintainer/update-readme-addresses.sh`, run automatically at the end of `deploy.sh`. See [jq docs](https://jqlang.github.io/jq/download/) |
 
 The repo ships `rust-toolchain.toml` pinning channel `1.85.0` and
@@ -88,49 +89,98 @@ Paste the values into `trusttrove-app/.env.local`.
 ## Contract Wiring Order
 
 The deploy script initializes contracts in a specific order
-because each contract references others:
+because each contract references others. Below is a detailed wiring table.
 
-```
-1. registry_contract
-   └─ no dependencies
+### Wiring Table
 
-2. invoice_contract
-   └─ needs: registry_contract
-
-3. escrow_contract (USDC)
-   └─ needs: pool_contract, USDC asset
-
-4. pool_contract (USDC)
-   └─ needs: invoice_contract, escrow_contract, USDC asset
-
-5. escrow_contract (XLM) [EXPERIMENTAL]
-   └─ needs: pool_contract, XLM asset
-
-6. pool_contract (XLM) [EXPERIMENTAL]
-   └─ needs: invoice_contract, escrow_contract, XLM asset
-
-7. Wire pool into invoice
-   └─ invoice.set_pool_contract(pool_usdc)
-
-8. Wire escrow into invoice
-   └─ invoice.set_escrow_contract(escrow_usdc)
-   Without this, repay / repay_partial / repay_early panic with
-   `InvoiceError::NotFound` when reading `DataKey::EscrowContract`.
-
-9. Allow-list funding assets
-   └─ invoice.add_supported_asset(usdc)
-   └─ invoice.add_supported_asset(xlm)
-   Without this, `create` rejects every invoice with `UnsupportedAsset`.
-
-10. Wire agent registry (optional — skipped when `AGENT_REGISTRY_CONTRACT`
-    is unset)
-    └─ invoice.set_agent_registry_contract(agent_registry)
-    Without this, `submit_attestation` panics and `list_for_financing`
-    can never unlock.
-```
+| Step | Setter / Initializer | Source Address | Destination Contract | Required Order |
+|------|----------------------|----------------|----------------------|----------------|
+| 1 | `registry.initialize()` | Deployer admin | — | First — no dependencies |
+| 2 | `invoice.initialize()` | Deployer admin | Registry contract | After registry is live |
+| 3 | `escrow_usdc.initialize()` | Deployer admin | Pool contract, USDC asset | After pool is deployed |
+| 4 | `pool_usdc.initialize()` | Deployer admin | Invoice contract, Escrow contract, USDC asset | After invoice + escrow are live |
+| 5 | `escrow_usdc.set_invoice_contract()` (optional, #997) | Escrow admin | — | After escrow + pool are live (defense-in-depth pin) |
+| 6 | `invoice.set_pool_contract()` | Invoice admin | Pool contract | After pool is initialized |
+| 7 | `invoice.set_escrow_contract()` | Invoice admin | Escrow contract | After escrow is initialized (prevents `InvoiceError::NotFound`) |
+| 8 | `invoice.add_supported_asset(usdc)` | Invoice admin | — | After escrow is wired (otherwise `create` rejects with `UnsupportedAsset`) |
+| 9 | `invoice.add_supported_asset(xlm)` (optional) | Invoice admin | — | After escrow is wired (EXPERIMENTAL) |
+| 10 | `invoice.set_agent_registry_contract()` (optional) | Invoice admin | Agent registry contract | Only when `AGENT_REGISTRY_CONTRACT` is set (see AGENT_REGISTRY_WIRING) |
 
 The registry must be deployed first because all other contracts
 call `is_verified()` on it during initialization.
+
+### Post-Deploy Verification
+
+After `deploy.sh` completes, verify all stored references are correctly
+wired with the following read-only calls:
+
+```bash
+# Verify registry is initialized and responsive
+stellar contract invoke --id $REGISTRY_ID \
+  --source $DEPLOYER_ACCOUNT --network testnet \
+  -- get_admin
+
+# Verify invoice contract references
+stellar contract invoke --id $INVOICE_ID \
+  --source $DEPLOYER_ACCOUNT --network testnet \
+  -- get_escrow_contract
+stellar contract invoke --id $INVOICE_ID \
+  --source $DEPLOYER_ACCOUNT --network testnet \
+  -- get_agent_registry_contract
+stellar contract invoke --id $INVOICE_ID \
+  --source $DEPLOYER_ACCOUNT --network testnet \
+  -- is_supported_asset $USDC_ISSUER
+
+# Verify pool contract references
+stellar contract invoke --id $POOL_USDC_ID \
+  --source $DEPLOYER_ACCOUNT --network testnet \
+  -- get_invoice_contract
+stellar contract invoke --id $POOL_USDC_ID \
+  --source $DEPLOYER_ACCOUNT --network testnet \
+  -- get_escrow_contract
+stellar contract invoke --id $POOL_USDC_ID \
+  --source $DEPLOYER_ACCOUNT --network testnet \
+  -- get_funding_asset
+
+# Verify escrow contract references
+stellar contract invoke --id $ESCROW_USDC_ID \
+  --source $DEPLOYER_ACCOUNT --network testnet \
+  -- get_pool_contract
+stellar contract invoke --id $ESCROW_USDC_ID \
+  --source $DEPLOYER_ACCOUNT --network testnet \
+  -- get_usdc_asset
+stellar contract invoke --id $ESCROW_USDC_ID \
+  --source $DEPLOYER_ACCOUNT --network testnet \
+  -- get_invoice_contract
+
+# Verify timeout window is set (or defaults to 30 days)
+stellar contract invoke --id $ESCROW_USDC_ID \
+  --source $DEPLOYER_ACCOUNT --network testnet \
+  -- get_timeout_window
+
+# Check .env.deployed was generated correctly
+cat .env.deployed
+```
+
+The built-in verification script also checks these references:
+```bash
+bash scripts/verify.sh
+```
+
+Or on Windows (PowerShell):
+```powershell
+powershell ./scripts/verify.ps1
+```
+
+This checks each contract responds to a read-only query
+(`get_admin`, `get_counts`, `get_stats`, `get_locked`) and that the
+invoice contract's post-deploy wiring is in place
+(`get_escrow_contract`, `get_agent_registry_contract`,
+`is_supported_asset`).
+
+### Contract Address Lifecycle & Rotation Policy
+
+(...) (rest of the existing section unchanged)
 
 ## Multi-sig Admin
 
@@ -222,11 +272,51 @@ Or on Windows (PowerShell):
 powershell ./scripts/verify.ps1
 ```
 
-This checks each contract responds to a read-only query
-(`get_admin`, `get_counts`, `get_stats`, `get_locked`) and that the
+This checks every initialized contract's on-chain `get_admin` equals the
+deployer address (see [Front-run Initialization
+Detection](#front-run-initialization-detection-issue-825) below) and that
+each contract responds to a read-only query
+(`get_admin`, `get_counts`, `get_stats`, `get_locked`), and that the
 invoice contract's post-deploy wiring is in place
 (`get_escrow_contract`, `get_agent_registry_contract`,
 `is_supported_asset`).
+
+## Front-run Initialization Detection (Issue #825)
+
+Every contract's `initialize` only requires auth from the `admin` address
+passed as an argument, so between `deploy.sh`'s *deploy* transaction and its
+*initialize* transaction anyone can initialize a freshly deployed,
+not-yet-initialized contract with **their own** admin. Our initialize then
+fails with `AlreadyInitialized` — and the attacker owns the admin slot.
+Because deploy and initialize are separate transactions, this window always
+exists; `deploy.sh` therefore detects it two ways:
+
+1. `invoke_init` distinguishes an `AlreadyInitialized` failure ("already
+   initialized — possibly by someone else; rerunning cannot fix it") from
+   transient errors ("rerun will retry").
+2. After every `initialize` step, `verify_admin` reads `get_admin` back from
+   the contract and **aborts the deployment** unless it equals the deployer
+   address resolved from `DEPLOYER_ACCOUNT`. `scripts/verify.sh` performs
+   the same comparison for the registry, invoice, both pools, and both
+   escrows (`verify_admin_match`), so a resumed or previously-deployed
+   setup can be re-audited at any time.
+
+If you see `POSSIBLE FRONT-RUN INITIALIZATION`:
+
+1. Do **not** use those addresses — the admin (and every later admin-gated
+   operation: wiring, upgrades, pausing) belongs to whoever initialized
+   first.
+2. Redeploy the affected contracts from a clean state:
+   `./scripts/deploy.sh --fresh` (or `--only <contract>` per contract).
+   `--fresh` wipes `.deployed-addresses`, so deploy *and* initialize run
+   again against new instances; the post-initialize `get_admin` assertion
+   runs again automatically.
+3. Re-run `bash scripts/verify.sh` and confirm every
+   `[PASS] <contract> admin is the deployer` line before wiring anything
+   downstream.
+
+Permanent fix tracked separately (constructor-based initialization); this
+detection is the interim control.
 
 You can also verify on [Stellar Expert Testnet](https://stellar.expert/explorer/testnet).
 
