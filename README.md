@@ -373,7 +373,69 @@ Verify on [Stellar Expert Testnet](https://stellar.expert/explorer/testnet)
 
 ---
 
-## Quick Start
+## Asset Decimals and Amount Conversion
+
+### Seven-Decimal USDC Assumption
+
+All contracts treat USDC as having **7 decimal places**: `1 USDC = 10_000_000 stroops`.
+This assumption is enforced at the contract level and is critical for correct
+amount interpretation.
+
+### Token Interface Amount Type
+
+All amount fields across the four contract crates use `u128` and are
+**denominated in stroops** (the base unit of the funding asset). The token
+client (e.g., `soroban_sdk::token::Client`) handles the conversion between
+human-readable units and stroops, but the contracts always work in stroops.
+
+Conversion rules:
+- **Human unit → stroops**: `amount_in_stroops = amount_in_human * 10_000_000`
+- **stroops → human unit**: `amount_in_human = amount_in_stroops / 10_000_000`
+- Rounding: integer division truncates (floor), so `1 stroop = 0.0000001 USDC`;
+the smallest representable human amount is `1 USDC = 10_000_000 stroops`.
+
+### Where Conversion Is Prohibited
+
+Conversion between human units and stroops must **not** be performed inside
+contract code. All contracts operate exclusively in stroops. Any conversion
+must happen off-chain (in wallet UI, indexer, or integration code). The
+contracts will reject amounts that would overflow `u128` or violate the
+protocol's arithmetic invariants.
+
+### Deployment and Test Examples
+
+The following examples show the same USDC amount expressed in both human
+units and stroops, for use in deployment scripts and test fixtures:
+
+| Human Amount | Stroops (u128) | Context |
+|-------------|----------------|---------|
+| `1 USDC` | `10_000_000` | `DEFAULT_MIN_INITIAL_DEPOSIT` in pool tests |
+| `100 USDC` | `1_000_000_000` | Typical test deposit amount |
+| `1_000_000 USDC` | `100_000_000_000_000` | Large deposit / share price testing |
+| `10_000_000 USDC` (1M) | `10_000_000_000_000_000` | Max test deposit |
+
+**Rust test example** (from `contracts/pool/src/test.rs`):
+
+```rust
+// Deposit 10_000_000_000 stroops (= 1000 USDC)
+let shares = te.pool.deposit(&te.lp, &10_000_000_000);
+```
+
+**Deployment example** (from `scripts/deploy.sh`):
+
+```bash
+# Fund the pool with 1_000_000 USDC (10_000_000_000_000 stroops)
+as_contract(&usdc_id, || {
+    env.storage().persistent().set(&lp_bal_key, &10_000_000_000_000_000i128);
+});
+```
+
+### Summary
+- USDC = 7 decimals → 1 USDC = 10_000_000 stroops
+- All contract amounts are `u128` in stroops
+- Convert human ↔ stroops off-chain only
+- Integer division truncates; smallest human unit = 1 USDC
+
 
 ### Prerequisites
 
