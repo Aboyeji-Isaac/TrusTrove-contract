@@ -1335,10 +1335,14 @@ impl PoolContract {
             panic_with_error!(&env, PoolError::InvoiceNotListed);
         }
 
-        let issuer = ctx.issuer.clone();
+        // Keep the canonical issuer from the invoice context for both escrow
+        // callbacks. Escrow records this value during the pool-authorized lock
+        // and validates the release recipient against that record; it must not
+        // call back through this active pool frame to resolve the invoice again.
+        let canonical_issuer = ctx.issuer;
         let registry_id = Self::registry_contract(&env);
         let mut args = Vec::new(&env);
-        args.push_back(issuer.clone().into_val(&env));
+        args.push_back(canonical_issuer.clone().into_val(&env));
         let issuer_verified: bool =
             env.invoke_contract(&registry_id, &Symbol::new(&env, "is_verified"), args);
         if !issuer_verified {
@@ -1449,7 +1453,7 @@ impl PoolContract {
         let mut args = Vec::new(&env);
         args.push_back(invoice_id.clone().into_val(&env));
         args.push_back(funded_amount.into_val(&env));
-        args.push_back(issuer.clone().into_val(&env));
+        args.push_back(canonical_issuer.clone().into_val(&env));
         let _: bool = env.invoke_contract(&escrow_contract, &Symbol::new(&env, "lock"), args);
 
         let pool_address = env.current_contract_address();
@@ -1470,7 +1474,7 @@ impl PoolContract {
         // out-of-band lock removal.
         let mut args = Vec::new(&env);
         args.push_back(invoice_id.clone().into_val(&env));
-        args.push_back(issuer.into_val(&env));
+        args.push_back(canonical_issuer.into_val(&env));
         let _: bool = env.invoke_contract(
             &escrow_contract,
             &Symbol::new(&env, "release_to_issuer"),
