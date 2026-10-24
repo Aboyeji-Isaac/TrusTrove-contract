@@ -2866,6 +2866,70 @@ fn test_receive_repayment_with_refund_rejects_foreign_destination_even_with_zero
     );
 }
 
+// #969 upgrade path: funded entries created before the buyer snapshot existed
+// must not become unpayable. `backfill_funded_invoice_buyer` reads the buyer
+// from the trusted invoice contract and restores the snapshot without moving
+// funds, after which the ordinary refund path works again.
+#[test]
+fn test_backfill_funded_invoice_buyer_restores_legacy_refund_path() {
+    let te = setup();
+    te.pool.deposit(&te.lp, &100_000_000_000);
+    let invoice_id = create_and_list(&te, &te.usdc_id);
+    te.pool.fund_invoice(&invoice_id);
+
+    // Simulate a pre-#969 funded entry: the `FundedInvoice` principal is live
+    // but the buyer snapshot does not exist yet.
+    te.env.as_contract(&te.pool_id, || {
+        te.env
+            .storage()
+            .persistent()
+            .remove(&DataKey::FundedInvoiceBuyer(invoice_id.clone()));
+    });
+
+    let usdc = MockTokenClient::new(&te.env, &te.usdc_id);
+    let buyer_before = usdc.balance(&te.buyer);
+    let refund = 120_000_000u128;
+
+    let rejected = te.pool.try_receive_repayment_with_refund(
+        &invoice_id,
+        &DEFAULT_FACE_VALUE,
+        &refund,
+        &te.buyer,
+    );
+    let error = std::format!("{rejected:?}");
+    assert!(rejected.is_err(), "legacy entry must fail closed: {error}");
+    assert!(
+        error.contains("#27"),
+        "expected PoolError::BuyerMismatch before backfill: {error}"
+    );
+
+    assert!(
+        te.pool.backfill_funded_invoice_buyer(&invoice_id),
+        "the missing snapshot must be written"
+    );
+    assert!(
+        !te.pool.backfill_funded_invoice_buyer(&invoice_id),
+        "an existing snapshot must never be overwritten"
+    );
+
+    assert!(te.pool.receive_repayment_with_refund(
+        &invoice_id,
+        &DEFAULT_FACE_VALUE,
+        &refund,
+        &te.buyer
+    ));
+    assert_eq!(usdc.balance(&te.buyer), buyer_before + refund as i128);
+    assert_eq!(te.pool.get_funded_amount(&invoice_id), None);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_backfill_funded_invoice_buyer_rejects_unfunded_invoice() {
+    let te = setup();
+    let invoice_id = create_and_list(&te, &te.usdc_id);
+    te.pool.backfill_funded_invoice_buyer(&invoice_id);
+}
+
 // A failing refund transfer must not leave the pool partially settled.
 //
 // `receive_repayment_with_refund` settles the invoice first (LP yield

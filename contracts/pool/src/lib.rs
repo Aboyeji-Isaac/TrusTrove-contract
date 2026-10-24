@@ -1674,6 +1674,67 @@ impl PoolContract {
         true
     }
 
+    /// Snapshots the canonical buyer for a funded invoice that was created
+    /// before `DataKey::FundedInvoiceBuyer` existed (#969 upgrade path).
+    ///
+    /// Invoices funded by this contract version always carry the snapshot, so
+    /// their refunds cannot be redirected. A pool upgraded while invoices are
+    /// already outstanding has funded entries without that key, and the
+    /// original funding call cannot be replayed. This entry point lets anyone
+    /// (an operator, keeper, or the LP tooling) fill the missing snapshot by
+    /// asking the configured invoice contract for the invoice's buyer. The
+    /// buyer is read from the trusted invoice contract rather than supplied as
+    /// calldata, so a caller cannot choose the destination; the function moves
+    /// no funds and never overwrites an existing snapshot.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban environment.
+    /// * `invoice_id` - A currently funded invoice whose buyer snapshot is
+    ///   missing.
+    ///
+    /// # Panics
+    /// * `NotInitialized` if the pool has no configured invoice contract.
+    /// * `InvoiceNotFound` if the invoice has no live funded entry.
+    /// * `ContractPaused` if the pool is paused.
+    ///
+    /// # Returns
+    /// * `bool` - `true` when the snapshot was written, `false` when the
+    ///   invoice already had one.
+    ///
+    /// # Example
+    /// ```ignore
+    /// client.backfill_funded_invoice_buyer(&invoice_id);
+    /// ```
+    pub fn backfill_funded_invoice_buyer(env: Env, invoice_id: BytesN<32>) -> bool {
+        require_not_paused(&env);
+        let invoice_contract = Self::invoice_contract(&env)
+            .unwrap_or_else(|| panic_with_error!(&env, PoolError::NotInitialized));
+
+        let funded_key = DataKey::FundedInvoice(invoice_id.clone());
+        if !env.storage().persistent().has(&funded_key) {
+            panic_with_error!(&env, PoolError::InvoiceNotFound);
+        }
+
+        let buyer_key = DataKey::FundedInvoiceBuyer(invoice_id.clone());
+        if env.storage().persistent().has(&buyer_key) {
+            return false;
+        }
+
+        // Outside settlement the invoice contract is not on the invocation
+        // stack, so reading its canonical buyer is allowed here.
+        let mut args = Vec::new(&env);
+        args.push_back(invoice_id.clone().into_val(&env));
+        let buyer: Address =
+            env.invoke_contract(&invoice_contract, &Symbol::new(&env, "get_buyer"), args);
+
+        env.storage().persistent().set(&buyer_key, &buyer);
+        env.storage()
+            .persistent()
+            .extend_ttl(&buyer_key, TTL_THRESHOLD, TTL_EXTEND_TO);
+        Self::extend_instance_ttl(&env);
+        true
+    }
+
     /// Forwards a defaulted invoice to escrow default handling and updates
     /// the invoice status on the invoice contract.
     ///
