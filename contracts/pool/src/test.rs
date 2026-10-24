@@ -3615,10 +3615,9 @@ fn test_handle_default_rolls_back_when_mark_defaulted_fails() {
     );
     assert_eq!(escrow.get_locked(&invoice_id), 0);
 
-    let failing_invoice_id = te.env.register_contract(
-        None,
-        failing_mark_defaulted::MockFailingMarkDefaultedInvoice,
-    );
+    let failing_invoice_id = te
+        .env
+        .register(failing_mark_defaulted::MockFailingMarkDefaultedInvoice, ());
     te.env.as_contract(&te.pool_id, || {
         te.env
             .storage()
@@ -3712,9 +3711,9 @@ fn test_handle_default_rejects_unpersisted_default() {
         .ledger()
         .set_timestamp(te.env.ledger().timestamp() + 60);
 
-    let refusing_invoice_id = te.env.register_contract(
-        None,
+    let refusing_invoice_id = te.env.register(
         refusing_mark_defaulted::MockRefusingMarkDefaultedInvoice,
+        (),
     );
     te.env.as_contract(&te.pool_id, || {
         te.env
