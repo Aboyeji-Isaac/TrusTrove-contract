@@ -53,6 +53,14 @@ jobs:
       - name: Audit dependencies (RUSTSEC)
         run: cargo audit
 
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Check cargo-deny advisories and licenses
+        run: cargo deny check
+
       # Issue #805: cargo audit covers RUSTSEC advisories, but nothing caught
       # dependencies that are declared and unused (which inflate compile time
       # and the audit surface). cargo-machete scans Cargo.toml declarations
@@ -78,8 +86,14 @@ jobs:
       - name: Build wasm (release)
         run: cargo build --workspace --release --target wasm32v1-none
 
-      - name: Test
+      - name: Test (default features)
         run: cargo test --workspace
+
+      - name: Test (all features)
+        run: cargo test --workspace --all-features
+
+      - name: Build documentation (warnings as errors)
+        run: cargo doc --workspace --no-deps --all-features
 
       - name: Check wasm size budget
         run: |
@@ -154,7 +168,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: env.CODECOV_TOKEN != ''
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage/cobertura.xml

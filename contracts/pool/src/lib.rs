@@ -1,4 +1,11 @@
 #![no_std]
+// `PoolContract::__constructor` takes 10 contract arguments (issue #826 SDK
+// upgrade): under soroban-sdk 23 the `#[contractimpl]`/`contractargs`
+// expansion re-emits that signature as generated code that inherits neither a
+// fn-level nor an impl-level `#[allow(clippy::too_many_arguments)]` (both were
+// verified ineffective with the workspace's clippy), so the suppression has to
+// live at the crate root.
+#![allow(clippy::too_many_arguments)]
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, panic_with_error, token, Address, BytesN, Env, IntoVal,
@@ -19,10 +26,19 @@ pub use errors::*;
 pub use types::*;
 
 /// Default maximum utilization cap (in basis points) written at
-/// `initialize()` time. 8500 bps = 85%. This is the single source of truth for
+/// construction (`__constructor`) time. 8500 bps = 85%. This is the single source of truth for
 /// the default: `totals()`'s fallback reads the same constant, so the two call
 /// sites can never silently desync if the default is ever changed.
 pub const DEFAULT_MAX_UTILIZATION_BPS: u32 = 8500;
+
+/// Upper bound for the admin-settable minimum discount floor enforced by
+/// `set_min_discount` (`DataKey::MinDiscountBps`, issue #829). 5000 bps = 50%
+/// matches the hard discount cap that `invoice::list_for_financing` enforces
+/// (see `SUGGESTED_DISCOUNT_CEILING_BPS`, deliberately equal to the same
+/// 5000), so the floor can never exceed a discount an invoice could legally
+/// carry. The default floor is 0 (disabled) — choosing a non-zero value is an
+/// admin/policy decision, this bound only bounds the mechanism.
+pub const MAX_MIN_DISCOUNT_BPS: u32 = 5_000;
 
 /// Mirror of `InvoiceContract::FundingContext` (issue #833).
 ///
@@ -71,7 +87,11 @@ struct PoolTotals {
 
 #[contractimpl]
 impl PoolContract {
-    /// Initializes the pool contract with admin and external contract references.
+    /// Constructs the pool contract with admin and external contract references.
+    ///
+    /// Runs atomically at deploy time (Soroban protocol constructor, #827):
+    /// there is no window in which the instance exists without its wiring, so
+    /// no one can front-run initialization.
     ///
     /// # Arguments
     /// * `env` - The Soroban environment.
@@ -99,7 +119,7 @@ impl PoolContract {
     /// and for the same reason: under the `pool_factory` model each pool funds a
     /// different asset, so a deploy for an asset with other than 7 decimals
     /// supplies its own name, symbol and precision. Fixing it at
-    /// `initialize` also means a wallet never sees an LP's share balance
+    /// construction (`__constructor`) also means a wallet never sees an LP's share balance
     /// silently re-labelled under a different symbol.
     ///
     /// Protocol fee storage (`DataKey::ProtocolFeeBps`) is explicitly initialized to 0 bps
@@ -109,35 +129,39 @@ impl PoolContract {
     /// Requires authorization from `admin`.
     ///
     /// # Wiring order
-    /// `escrow_contract` must already be initialized before this call, since
-    /// `initialize` cross-checks `escrow_contract.get_usdc_asset()` against
-    /// its own `funding_asset` to catch a misconfigured deploy where escrow was
-    /// wired up with a different token.
+    /// `escrow_contract` must already be constructed before this deployment,
+    /// since the constructor cross-checks `escrow_contract.get_usdc_asset()`
+    /// against its own `funding_asset` to catch a misconfigured deploy where
+    /// escrow was wired up with a different token.
     ///
     /// # Panics
-    /// * `AlreadyInitialized` if the contract has already been initialized.
     /// * `InvalidConfiguration` if core contract addresses collide, if
     ///   `treasury` equals the pool itself or any settlement contract address,
-    ///   or if `share_name`/`share_symbol` is empty (a wallet that cannot render
-    ///   the share token is treated as a misconfigured deploy).
+    ///   or if `share_name`/`share_symbol` is empty (a wallet that cannot
+    ///   render the share token is treated as a misconfigured deploy).
     /// * `EscrowAssetMismatch` if `escrow_contract`'s configured USDC asset
     ///   does not match `funding_asset`.
+    ///   A panic here aborts the deployment transaction, so no misconfigured
+    ///   instance is ever created. `AlreadyInitialized` is unreachable from
+    ///   this entry point (the protocol invokes the constructor exactly once)
+    ///   and is kept only for error-code stability.
     ///
     /// # Returns
     /// * `()` - No value is returned.
     ///
     /// # Example
     /// ```ignore
-    /// escrow_client.initialize(&admin, &pool, &invoice, &usdc); // escrow first
-    /// client.initialize(&admin, &invoice, &escrow, &usdc, &registry, &admin,
-    ///     &min_deposit, &share_name, &share_symbol, &share_decimals);
+    /// // escrow first, then the pool, each constructed at deploy time:
+    /// // env.register_at(EscrowContract, (admin, pool_addr, usdc), pool_addr)
+    /// // env.register(PoolContract, (admin, invoice, escrow, usdc, registry,
+    /// //     treasury, min_deposit, share_name, share_symbol, share_decimals))
     /// ```
     // One-shot wiring for a pool instance: six contract/admin references, the
     // treasury, the deposit floor and the three SEP-41 share-metadata values.
     // Bundling the metadata into a struct would clear the argument-count lint
-    // but would make the initializer's wiring less explicit at call sites.
+    // but would make the constructor's wiring less explicit at call sites.
     #[allow(clippy::too_many_arguments)]
-    pub fn initialize(
+    pub fn __constructor(
         env: Env,
         admin: Address,
         invoice_contract: Address,
@@ -151,9 +175,6 @@ impl PoolContract {
         share_decimals: u32,
     ) {
         require_not_paused(&env);
-        if Self::admin(&env).is_some() {
-            panic_with_error!(&env, PoolError::AlreadyInitialized);
-        }
         if admin == invoice_contract
             || admin == escrow_contract
             || admin == funding_asset
@@ -184,8 +205,8 @@ impl PoolContract {
         // otherwise surface later as a failed token transfer inside
         // fund_invoice's escrow.lock call, since escrow.lock pulls funds
         // using escrow's own configured token client. This requires
-        // escrow_contract to already be initialized at the time pool.initialize
-        // is called.
+        // escrow_contract to already be constructed at the time the pool's
+        // __constructor runs.
         let args = Vec::new(&env);
         let escrow_funding_asset: Address =
             env.invoke_contract(&escrow_contract, &Symbol::new(&env, "get_usdc_asset"), args);
@@ -244,6 +265,12 @@ impl PoolContract {
         env.storage()
             .instance()
             .set(&DataKey::ShareDecimals, &share_decimals);
+        // Explicitly set DataKey::MinDiscountBps to 0 (no yield floor), the
+        // same convention as ProtocolFeeBps above. Instances predating the
+        // floor keep reading 0 through the `unwrap_or(0)` fallbacks (#829).
+        env.storage()
+            .instance()
+            .set(&DataKey::MinDiscountBps, &0u32);
         Self::extend_instance_ttl(&env);
 
         events::pool_initialized(
@@ -308,7 +335,7 @@ impl PoolContract {
     ///
     /// Shares are issued in the funding asset's base units, so
     /// `docs/SEP41_DESIGN.md` requires this to match the funding asset's own
-    /// decimals; `initialize` therefore takes a `share_decimals` per instance.
+    /// decimals; the `__constructor` therefore takes a `share_decimals` per instance.
     /// The `DEFAULT_SHARE_DECIMALS` fallback covers instances that predate it,
     /// which were all USDC pools.
     ///
@@ -333,7 +360,7 @@ impl PoolContract {
     }
 
     /// Returns this pool's LP share token name (SEP-41 `name`), as configured
-    /// in `initialize`.
+    /// by the `__constructor`.
     ///
     /// # Arguments
     /// * `env` - The Soroban environment.
@@ -342,7 +369,7 @@ impl PoolContract {
     /// No authorization is required.
     ///
     /// # Panics
-    /// * `NotInitialized` if `initialize` has not stored the name yet.
+    /// * `NotInitialized` if the `__constructor` has not stored the name yet.
     ///
     /// # Returns
     /// * `String` - The share token name.
@@ -359,7 +386,7 @@ impl PoolContract {
     }
 
     /// Returns this pool's LP share token symbol (SEP-41 `symbol`), as
-    /// configured in `initialize`.
+    /// configured by the `__constructor`.
     ///
     /// # Arguments
     /// * `env` - The Soroban environment.
@@ -368,7 +395,7 @@ impl PoolContract {
     /// No authorization is required.
     ///
     /// # Panics
-    /// * `NotInitialized` if `initialize` has not stored the symbol yet.
+    /// * `NotInitialized` if the `__constructor` has not stored the symbol yet.
     ///
     /// # Returns
     /// * `String` - The share token symbol.
@@ -618,7 +645,7 @@ impl PoolContract {
     /// Requires self-authorization from `lp` (via `lp.require_auth()`).
     ///
     /// # Panics
-    /// * `InvalidAmount` if `usdc_amount` is zero or if initial deposit is below this instance's configured minimum (see `initialize`'s `min_initial_deposit`).
+    /// * `InvalidAmount` if `usdc_amount` is zero or if initial deposit is below this instance's configured minimum (see the `__constructor`'s `min_initial_deposit`).
     /// * `MinimumDeposit` if the deposit is too small to mint at least 1 share
     ///   at the current share price (prevents 0-share dust deposits).
     /// * `Overflow` if `usdc_amount * total_shares` would overflow `u128`
@@ -640,7 +667,7 @@ impl PoolContract {
 
         let usdc_id = Self::funding_asset(&env);
         let usdc = token::Client::new(&env, &usdc_id);
-        usdc.transfer(&lp, &env.current_contract_address(), &(usdc_amount as i128));
+        usdc.transfer(&lp, env.current_contract_address(), &(usdc_amount as i128));
 
         Self::_mint(&env, &lp, shares_to_issue);
         env.storage()
@@ -1211,6 +1238,8 @@ impl PoolContract {
     /// 2. Invoice funding asset must match the pool's asset (USDC)
     /// 3. Pool must have sufficient available liquidity
     /// 4. Funding would not cause pool utilization to exceed the `max_utilization_bps` cap
+    /// 5. Invoice `discount_bps` must meet the admin-configured minimum
+    ///    discount floor (`set_min_discount`, default `0` = disabled, #829)
     ///
     /// See README §"Known Centralization Risks & Roadmap" for the longer-term
     /// governance design that will let LPs signal approval on funding decisions.
@@ -1241,6 +1270,10 @@ impl PoolContract {
     /// * `UtilizationCapExceeded` if funding would push utilization above the cap.
     /// * `Overflow` if `face_value * (10000 - discount_bps)` or the resulting
     ///   utilization calculation overflows `u128`.
+    /// * `DiscountBelowMinimum` if the invoice's `discount_bps` is below the
+    ///   admin-configured floor (`DataKey::MinDiscountBps`, set via
+    ///   `set_min_discount`). The floor defaults to 0, where this check is
+    ///   unreachable (issue #829).
     ///
     /// # Returns
     /// * `bool` - `true` when the invoice is funded.
@@ -1332,6 +1365,20 @@ impl PoolContract {
         let discount_bps = ctx.discount_bps;
         if discount_bps > 10_000 {
             panic_with_error!(&env, PoolError::InvalidAmount);
+        }
+        // Admin-set yield floor (issue #829): reject invoices that would
+        // deploy LP capital below the configured minimum discount before any
+        // amount is computed or committed. Like the other eligibility checks
+        // this panics in both single and batch mode (`stop_on_capacity` only
+        // softens capacity shortfalls). While the floor is at its default 0
+        // the comparison is unreachable, so existing behavior is unchanged.
+        let min_discount_bps: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::MinDiscountBps)
+            .unwrap_or(0u32);
+        if discount_bps < min_discount_bps {
+            panic_with_error!(&env, PoolError::DiscountBelowMinimum);
         }
         let funded_amount = face_value
             .checked_mul(10000 - discount_bps as u128)
@@ -2244,6 +2291,66 @@ impl PoolContract {
             })
     }
 
+    /// Sets the minimum invoice discount (yield floor) enforced by
+    /// `fund_invoice`, in basis points (issue #829).
+    ///
+    /// Authorization mirrors `set_protocol_fee`: the *stored* admin must sign;
+    /// the `bps` argument is the new floor, not an actor, so a caller can
+    /// never self-authorize past the check. A floor of `0` (the default, and
+    /// the state of every instance predating this feature) disables the check
+    /// entirely, leaving funding behavior unchanged until an admin opts in.
+    /// The value a sensible floor takes is an admin/policy decision outside
+    /// the scope of the mechanism added here.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban environment.
+    /// * `bps` - The new floor in basis points. `0` disables the floor; the
+    ///   maximum is `MAX_MIN_DISCOUNT_BPS` (5000 bps = 50%), matching the hard
+    ///   cap `invoice::list_for_financing` places on any invoice's discount.
+    ///
+    /// # Auth
+    /// Requires authorization from the stored `admin`.
+    ///
+    /// # Panics
+    /// * `NotInitialized` if the pool is not initialized.
+    /// * `InvalidConfiguration` if `bps` exceeds `MAX_MIN_DISCOUNT_BPS`.
+    ///
+    /// # Returns
+    /// * `bool` - `true` when the floor is updated.
+    ///
+    /// # Example
+    /// ```ignore
+    /// client.set_min_discount(&300);
+    /// ```
+    pub fn set_min_discount(env: Env, bps: u32) -> bool {
+        require_not_paused(&env);
+        let admin =
+            Self::admin(&env).unwrap_or_else(|| panic_with_error!(&env, PoolError::NotInitialized));
+        admin.require_auth();
+        if bps > MAX_MIN_DISCOUNT_BPS {
+            panic_with_error!(&env, PoolError::InvalidConfiguration);
+        }
+        let old_bps = env
+            .storage()
+            .instance()
+            .get(&DataKey::MinDiscountBps)
+            .unwrap_or(0u32);
+        env.storage().instance().set(&DataKey::MinDiscountBps, &bps);
+        events::min_discount_updated(&env, old_bps, bps);
+        Self::extend_instance_ttl(&env);
+        true
+    }
+
+    /// Returns the current minimum discount floor in basis points.
+    /// Defaults to `0` (no floor) when never set, so instances predating
+    /// issue #829 keep their behavior (mirrors `get_protocol_fee_bps`).
+    pub fn get_min_discount_bps(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::MinDiscountBps)
+            .unwrap_or(0u32)
+    }
+
     fn utilization_bps_or_panic(env: &Env, total_funded: u128, total_deposits: u128) -> u32 {
         if total_deposits == 0 {
             return 0;
@@ -2428,8 +2535,11 @@ impl PoolContract {
     ///    the LP yield slice (`amount - funded_amount - refund`) is never
     ///    negative; `receive_repayment` calls this with `refund = 0`, for which
     ///    the bound is trivially satisfied.
-    /// 3. Computes the totals updates with checked arithmetic, panicking with
-    ///    `Overflow` / `ActiveCountUnderflow` before anything moves.
+    /// 3. Computes every totals update with checked arithmetic — the yield
+    ///    credits to `TotalDeposits` / `TotalYieldDistributed` (#967), the
+    ///    funded principal removal from `TotalFunded`, and the
+    ///    `ActiveInvoiceCount` decrement — panicking with `Overflow` /
+    ///    `ActiveCountUnderflow` before anything moves.
     /// 4. When `refund_buyer` is `Some` (the refund entry point), compares
     ///    the destination against the canonical buyer snapshotted from the
     ///    invoice contract at funding time and panics with `BuyerMismatch` on
@@ -2438,9 +2548,7 @@ impl PoolContract {
     ///    before the treasury transfer, the totals update, and the
     ///    funded-entry removal: a mismatched destination moves no funds and
     ///    finalizes no accounting.
-    /// 5. Pays the protocol cut to the treasury, credits `yield_amount` to
-    ///    `TotalDeposits` / `TotalYieldDistributed`, removes the funded
-    ///    principal from `TotalFunded`, decrements `ActiveInvoiceCount`,
+    /// 5. Pays the protocol cut to the treasury, applies the checked totals,
     ///    removes the funded entry, emits `repayment_received`, and extends
     ///    the instance TTL.
     ///
@@ -2492,9 +2600,16 @@ impl PoolContract {
         let total_yield = totals.yield_distributed;
 
         // Validate every pool-side arithmetic bound before anything moves:
-        // the funded principal must fit back under `TotalFunded` and the
-        // active counter must be positive, surfaced as the typed
-        // `Overflow` / `ActiveCountUnderflow` panics.
+        // both yield credits are bounded up front (#967), and the funded
+        // principal must fit back under `TotalFunded` while the active
+        // counter must be positive, surfaced as the typed `Overflow` /
+        // `ActiveCountUnderflow` panics.
+        let new_total_deposits = total_deposits
+            .checked_add(lp_yield)
+            .unwrap_or_else(|| panic_with_error!(env, PoolError::Overflow));
+        let new_total_yield = total_yield
+            .checked_add(lp_yield)
+            .unwrap_or_else(|| panic_with_error!(env, PoolError::Overflow));
         let new_total_funded = total_funded
             .checked_sub(funded_amount)
             .unwrap_or_else(|| panic_with_error!(env, PoolError::Overflow));
@@ -2542,13 +2657,14 @@ impl PoolContract {
             }
         }
 
-        // Add LP yield (not full yield) to TotalDeposits and TotalYieldDistributed
+        // Add LP yield (not full yield) to TotalDeposits and
+        // TotalYieldDistributed; every value written here was checked above.
         env.storage()
             .instance()
-            .set(&DataKey::TotalDeposits, &(total_deposits + lp_yield));
+            .set(&DataKey::TotalDeposits, &new_total_deposits);
         env.storage()
             .instance()
-            .set(&DataKey::TotalYieldDistributed, &(total_yield + lp_yield));
+            .set(&DataKey::TotalYieldDistributed, &new_total_yield);
         env.storage()
             .instance()
             .set(&DataKey::TotalFunded, &new_total_funded);
