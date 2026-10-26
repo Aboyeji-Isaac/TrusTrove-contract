@@ -155,8 +155,7 @@ impl RegistryContract {
     /// Every metadata map is validated before any profile is created. A map
     /// may contain at most 20 entries; keys and values must be nonempty, keys
     /// may be at most 64 characters, and values may be at most 512 characters.
-    /// Metadata is currently validation-only: newly created profiles store an
-    /// empty metadata map, not the supplied map.
+    /// Validated metadata maps are stored on newly created profiles.
     ///
     /// Addresses already registered before the call are skipped. If an
     /// address occurs more than once in the batch, its first occurrence is

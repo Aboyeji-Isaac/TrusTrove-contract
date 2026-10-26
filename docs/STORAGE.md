@@ -101,8 +101,8 @@ issuer addresses and metadata maps. The stored admin must authorize the call.
 Each batch may contain at most 50 entries; an empty batch is valid. All
 metadata maps are validated before registration: each may contain at most 20
 entries, with nonempty keys and values, keys no longer than 64 characters, and
-values no longer than 512 characters. The metadata is validation-only for this
-entry point: newly created issuer profiles store an empty metadata map.
+values no longer than 512 characters. Each validated metadata map is stored on
+its newly created issuer profile.
 
 Addresses already registered are skipped. If an address is repeated within a
 batch, its first occurrence registers it and subsequent occurrences are
