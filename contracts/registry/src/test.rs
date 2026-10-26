@@ -1227,7 +1227,7 @@ fn test_batch_register_issuers_all_new() {
 
     let entries = vec![
         &env,
-        (issuer1.clone(), metadata1),
+        (issuer1.clone(), metadata1.clone()),
         (issuer2.clone(), metadata2),
         (issuer3.clone(), metadata3),
     ];
@@ -1242,6 +1242,7 @@ fn test_batch_register_issuers_all_new() {
     assert_eq!(client.get_profile(&issuer1).role(), crate::Role::Issuer);
     assert_eq!(client.get_profile(&issuer2).role(), crate::Role::Issuer);
     assert_eq!(client.get_profile(&issuer3).role(), crate::Role::Issuer);
+    assert_eq!(client.get_profile(&issuer1).metadata, metadata1);
 }
 
 #[test]
