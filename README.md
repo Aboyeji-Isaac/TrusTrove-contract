@@ -217,7 +217,7 @@ These are client-facing signatures: the framework-provided env: Env parameter is
 
 | Contract | Public function | Client-facing signature |
 |---|---|---|
-| Registry | `initialize` | `initialize(admin: Address) -> ()` |
+| Registry | `__constructor` | `__constructor(admin: Address) -> ()` |
 | Registry | `upgrade` | `upgrade(new_wasm_hash: BytesN<32>) -> ()` |
 | Registry | `register_issuer` | `register_issuer(address: Address, metadata: Map<String, String>) -> bool` |
 | Registry | `batch_register_issuers` | `batch_register_issuers(entries: Vec<(Address, Map<String, String>)>) -> Vec<Address>` |
@@ -242,7 +242,7 @@ These are client-facing signatures: the framework-provided env: Env parameter is
 | Registry | `pause` | `pause() -> ()` |
 | Registry | `unpause` | `unpause() -> ()` |
 | Registry | `get_admin` | `get_admin() -> Address` |
-| Invoice | `initialize` | `initialize(admin: Address, registry_contract: Address) -> ()` |
+| Invoice | `__constructor` | `__constructor(admin: Address, registry_contract: Address) -> ()` |
 | Invoice | `get_admin` | `get_admin() -> Option<Address>` |
 | Invoice | `upgrade` | `upgrade(new_wasm_hash: BytesN<32>) -> ()` |
 | Invoice | `get_registry_contract` | `get_registry_contract() -> Option<Address>` |
@@ -270,6 +270,8 @@ These are client-facing signatures: the framework-provided env: Env parameter is
 | Invoice | `repay` | `repay(invoice_id: BytesN<32>) -> bool` |
 | Invoice | `repay_early` | `repay_early(invoice_id: BytesN<32>) -> bool` |
 | Invoice | `trigger_default` | `trigger_default(invoice_id: BytesN<32>) -> bool` |
+| Invoice | `set_default_grace_seconds` | `set_default_grace_seconds(seconds: u64) -> ()` |
+| Invoice | `get_default_grace_seconds` | `get_default_grace_seconds() -> u64` |
 | Invoice | `mark_defaulted` | `mark_defaulted(invoice_id: BytesN<32>) -> bool` |
 | Invoice | `set_expiry_window` | `set_expiry_window(window: u64) -> ()` |
 | Invoice | `get_expiry_window` | `get_expiry_window() -> u64` |
@@ -297,12 +299,13 @@ These are client-facing signatures: the framework-provided env: Env parameter is
 | Invoice | `transfer_ownership` | `transfer_ownership(new_admin: Address) -> ()` |
 | Invoice | `pause` | `pause() -> ()` |
 | Invoice | `unpause` | `unpause() -> ()` |
-| Escrow | `initialize` | `initialize(admin: Address, pool_contract: Address, usdc_asset: Address) -> ()` |
+| Escrow | `__constructor` | `__constructor(admin: Address, pool_contract: Address, usdc_asset: Address) -> ()` |
 | Escrow | `get_usdc_asset` | `get_usdc_asset() -> Address` |
 | Escrow | `get_admin` | `get_admin() -> Address` |
 | Escrow | `upgrade` | `upgrade(new_wasm_hash: BytesN<32>) -> ()` |
 | Escrow | `get_pool_contract` | `get_pool_contract() -> Address` |
 | Escrow | `get_invoice_contract` | `get_invoice_contract() -> Address` |
+| Escrow | `set_invoice_contract` | `set_invoice_contract(invoice_contract: Address) -> ()` |
 | Escrow | `lock` | `lock(invoice_id: BytesN<32>, amount: u128, issuer: Address) -> bool` |
 | Escrow | `release_to_issuer` | `release_to_issuer(invoice_id: BytesN<32>, issuer: Address) -> bool` |
 | Escrow | `release_to_pool` | `release_to_pool(invoice_id: BytesN<32>, repayment_amount: u128) -> bool` |
@@ -316,7 +319,7 @@ These are client-facing signatures: the framework-provided env: Env parameter is
 | Escrow | `get_locked` | `get_locked(invoice_id: BytesN<32>) -> u128` |
 | Escrow | `get_locked_at` | `get_locked_at(invoice_id: BytesN<32>) -> u64` |
 | Escrow | `get_history` | `get_history(invoice_id: BytesN<32>) -> Vec<EscrowEvent>` |
-| Pool | `initialize` | `initialize(admin: Address, invoice_contract: Address, escrow_contract: Address, funding_asset: Address, registry_contract: Address, treasury: Address, min_initial_deposit: u128, share_name: String, share_symbol: String, share_decimals: u32) -> ()` |
+| Pool | `__constructor` | `__constructor(admin: Address, invoice_contract: Address, escrow_contract: Address, funding_asset: Address, registry_contract: Address, treasury: Address, min_initial_deposit: u128, share_name: String, share_symbol: String, share_decimals: u32) -> ()` |
 | Pool | `get_funding_asset` | `get_funding_asset() -> Address` |
 | Pool | `get_usdc_asset` | `get_usdc_asset() -> Address` |
 | Pool | `decimals` | `decimals() -> u32` |
@@ -344,6 +347,7 @@ These are client-facing signatures: the framework-provided env: Env parameter is
 | Pool | `batch_fund_invoice` | `batch_fund_invoice(invoice_ids: Vec<BytesN<32>>) -> Vec<BytesN<32>>` |
 | Pool | `receive_repayment` | `receive_repayment(invoice_id: BytesN<32>, amount: u128) -> bool` |
 | Pool | `receive_repayment_with_refund` | `receive_repayment_with_refund(invoice_id: BytesN<32>, amount: u128, refund: u128, buyer: Address) -> bool` |
+| Pool | `backfill_funded_invoice_buyer` | `backfill_funded_invoice_buyer(invoice_id: BytesN<32>) -> bool` |
 | Pool | `handle_default` | `handle_default(invoice_id: BytesN<32>) -> bool` |
 | Pool | `balance` | `balance(id: Address) -> i128` |
 | Pool | `total_supply` | `total_supply() -> i128` |
@@ -356,14 +360,16 @@ These are client-facing signatures: the framework-provided env: Env parameter is
 | Pool | `set_protocol_fee` | `set_protocol_fee(fee_bps: u32, treasury: Address) -> bool` |
 | Pool | `get_protocol_fee_bps` | `get_protocol_fee_bps() -> u32` |
 | Pool | `get_treasury` | `get_treasury() -> Address` |
-| Pool Factory | `initialize` | `initialize(admin: Address) -> ()` |
+| Pool | `set_min_discount` | `set_min_discount(bps: u32) -> bool` |
+| Pool | `get_min_discount_bps` | `get_min_discount_bps() -> u32` |
+| Pool Factory | `__constructor` | `__constructor(admin: Address) -> ()` |
 | Pool Factory | `register_asset` | `register_asset(asset: Address, pool_wasm_hash: BytesN<32>, invoice_contract: Address, escrow_contract: Address) -> Address` |
 | Pool Factory | `register_existing_pool` | `register_existing_pool(asset: Address, pool_address: Address) -> ()` |
 | Pool Factory | `get_pool_for_asset` | `get_pool_for_asset(asset: Address) -> Option<Address>` |
 | Pool Factory | `get_aggregate_stats` | `get_aggregate_stats() -> Vec<(Address, PoolStats)>` |
 | Pool Factory | `list_assets` | `list_assets() -> Vec<Address>` |
 
-**Total: 145 public entry points across five deployable contracts.**
+**Total: 151 public entry points across five deployable contracts.**
 
 The shared TTL crate (contracts/ttl/src/lib.rs) exports only the THRESHOLD and EXTEND_TO constants. It is a workspace utility, not a callable contract API, so it has no entry-point group in this table.
 <!-- END GENERATED CONTRACT API -->
